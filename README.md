@@ -21,30 +21,29 @@ Les machines Windows se trouvent dans le domaine `NEVASEC.LOCAL`
 
 
 ### Création des VM
-- Télécharger les ISO **EN FRANCAIS**
-  - [Windows 10 Enterprise](https://www.microsoft.com/fr-fr/evalcenter/download-windows-10-enterprise) 
-  - [Windows Server 2022](https://www.microsoft.com/fr-fr/evalcenter/download-windows-server-2022)
+- Télécharger l'ISO **EN FRANÇAIS**
+  - [Windows Server 2022](https://www.microsoft.com/fr-fr/evalcenter/download-windows-server-2022) (utilisé pour DC01, SRV01 **et PC01**)
 - Créer les VM dans un hyperviseur en les nommant DC01, SRV01 & PC01.
-  - Pour VirtualBox, ajouter le fichier ISO. **Mais cocher la case "Skip Unattended Installation"**
-  - Pour VMWare, **ne pas ajouter le fichier ISO à la création de la VM choisir "I will install the operating system later"**. Puis ajouter l'ISO dans le lecteur CD quand la VM est créée.
+  - Pour VirtualBox, ajouter le fichier ISO. **Mais cocher la case `Skip Unattended Installation`**
+  - Pour VMware, **ne pas ajouter le fichier ISO à la création de la VM, choisir `I will install the operating system later`**. Puis ajouter l'ISO dans le lecteur CD quand la VM est créée.
 - Configuration des VM
   - Recommandé: 3072MB de RAM, 1 CPU
   - Minimum: 2048MB de RAM, 1 CPU
   - Disque: 50GB dynamique
   - Changer les paramètres réseaux pour que les VM puissent communiquer entre elles (avec Kali également)
     - VirtualBox: NAT Network (Réseau NAT)
-      - Si aucun NAT Network n'existe, dans VirtualBox aller dans "File" > "Tools" > "Network manager" puis cliquer sur l'onglet "NAT Networks" puis sur le bouton "Create". Il sera ensuite possible d'assigner un NAT Network aux VM.
-    - VMWare: Custom (VMNet8)
+      - Si aucun NAT Network n'existe, dans VirtualBox aller dans `File` > `Tools` > `Network manager` puis cliquer sur l'onglet `NAT Networks` puis sur le bouton `Create`. Il sera ensuite possible d'assigner un NAT Network aux VM.
+    - VMware: Custom (VMNet8)
  
-### Setup du DC
+### Setup du DC (DC01)
 1. Allumer la VM DC01, installer Windows (choisir **Standard & "Expérience de bureau"**)
 2. Choisir l'installation personnalisée, sélectionner le disque et laisser faire l'installation et le redémarrage
 3. Utiliser le mot de passe `R00tR00t` pour l'utilisateur `Administrateur`
-4. Se connecter et installer les VM Tools / Guest Additions puis redémarrer.
+4. Se connecter et installer les VM Tools / Guest Additions puis redémarrer
 5. Ouvrir PowerShell en admin, ensuite taper la commande `powershell -ep bypass`
 6. Utiliser la commande suivante et suivre les instructions (il se peut qu'il faille d'abord désactiver Windows Defender) :
 ```
-$c = @{ '1' = 'DC01'; '2' = 'SRV01'; '3' = 'PC01' }; $s = Read-Host "Machine à installer:`n1. Contrôleur de domaine (DC01)`n2. Serveur (SRV01)`n3. Client (PC01)`nEntrez votre choix (1/2/3):"; if ($c.ContainsKey($s)) { (iwr -useb ("https://raw.githubusercontent.com/WodenSec/ADLab/main/" + $c[$s] + ".ps1")) | iex; Invoke-LabSetup } else { Write-Host "Choix invalide." }
+$c = @{ '1' = 'DC01'; '2' = 'SRV01'; '3' = 'PC01' }; $s = Read-Host "Machine à installer:`n1. Contrôleur de domaine (DC01)`n2. Serveur (SRV01)`n3. Client (PC01)`nEntrez votre choix (1/2/3):"; if ($c.ContainsKey($s)) { (iwr -useb ("https://raw.githubusercontent.com/NevaSec/ADLab/main/" + $c[$s] + ".ps1")) | iex; Invoke-LabSetup } else { Write-Host "Choix invalide." }
 ```
 7. Le script va faire redémarrer le serveur.
 8. Répéter les étapes 5 & 6
@@ -81,17 +80,15 @@ Une fois que le script a été executé trois fois, il faut faire quelques confi
 - Ouvrir PowerShell en admin, ensuite taper la commande `powershell -ep bypass`
 - Utiliser la commande suivante et suivre les instructions (il se peut qu'il faille d'abord désactiver Windows Defender) :
 ```
-$c = @{ '1' = 'DC01'; '2' = 'SRV01'; '3' = 'PC01' }; $s = Read-Host "Machine à installer:`n1. Contrôleur de domaine (DC01)`n2. Serveur (SRV01)`n3. Client (PC01)`nEntrez votre choix (1/2/3):"; if ($c.ContainsKey($s)) { (iwr -useb ("https://raw.githubusercontent.com/WodenSec/ADLab/main/" + $c[$s] + ".ps1")) | iex; Invoke-LabSetup } else { Write-Host "Choix invalide." }
+$c = @{ '1' = 'DC01'; '2' = 'SRV01'; '3' = 'PC01' }; $s = Read-Host "Machine à installer:`n1. Contrôleur de domaine (DC01)`n2. Serveur (SRV01)`n3. Client (PC01)`nEntrez votre choix (1/2/3):"; if ($c.ContainsKey($s)) { (iwr -useb ("https://raw.githubusercontent.com/NevaSec/ADLab/main/" + $c[$s] + ".ps1")) | iex; Invoke-LabSetup } else { Write-Host "Choix invalide." }
 ````
 - Le script va redémarrer le serveur une fois. Il faut relancer le script. (Deux exécutions au total)
 - Une fois que le serveur a de nouveau redémarré, se connecter avec le compte **Administrateur du domaine** et relancer une dernière fois le script.
 
 ### Setup de PC01
 - Une fois le DC configuré, installer Windows sur la VM PC01.
-- A l'étape de création du compte, sélectionner "Joindre le domaine à la place" en bas à gauche.
-- Entrer le nom d'utilisateur `localadmin`.
-- Puis utiliser le mot de passe `Sysadmin123!`.
-- Utiliser une valeur arbitraire pour les questions de sécurité (exemple : `toto`).
+- Choisir l'installation **Standard & "Expérience de bureau"** (comme pour SRV01).
+- Utiliser le mot de passe `Sysadmin123!` pour l'utilisateur `Administrateur`.
 - Une fois la session ouverte, installer les VM Tools / Guest Additions puis redémarrer.
 - Ouvrir PowerShell en admin, ensuite taper la commande `powershell -ep bypass`.
 - Utiliser la commande suivante et suivre les instructions (il se peut qu'il faille d'abord désactiver Windows Defender) :
@@ -112,18 +109,13 @@ $c = @{ '1' = 'DC01'; '2' = 'SRV01'; '3' = 'PC01' }; $s = Read-Host "Machine à 
 - Une fois que toutes les VM sont configurées, faire un snapshot
 
 ## Setup Kali
-- Importer la Kali en double cliquant sur le fichier `.vbox` pour VirtualBox et `.vmx` pour VMWare
-- Changer la carte réseau en l'attribuant au NAT Network pour VirtualBox ou Custom (VMNet8) pour VMWare
+- Importer la Kali en double cliquant sur le fichier `.vbox` pour VirtualBox et `.vmx` pour VMware
+- Changer la carte réseau en l'attribuant au NAT Network pour VirtualBox ou Custom (VMNet8) pour VMware
 - Se connecter avec les identifiants `kali` / `kali`
-- Ouvrir un terminal et lancer la command `setxkbmap fr`
+- Ouvrir un terminal et lancer la commande `setxkbmap fr`
 - Lancer la commande `sudo nano /etc/default/keyboard` et changer le `us` en `fr`
 - Lancer la commande `sudo apt update`
 - Lancer la commande `sudo apt install kali-root-login`
 - Lancer la commande `sudo passwd root` puis choisir un mot de passe pour root
 - Redémarrer la Kali et **se connecter à la session en tant que root**
 - Eteindre et faire un snapshot
-
-
-## Notes
-
-Merci à [Dewalt](https://github.com/Dewalt-arch) pour son script [pimpmyadlab](https://github.com/Dewalt-arch/pimpmyadlab/tree/main). 

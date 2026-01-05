@@ -1,24 +1,46 @@
 #Requires -RunAsAdministrator
 
+# ============================================
+# Configuration centralisée
+# ============================================
+$Config = @{
+    DomainName       = "NEVASEC"
+    DomainFQDN       = "NEVASEC.LOCAL"
+    DomainNetBIOS    = "NEVASEC"
+    SafeModeAdminPwd = "R00tR00t"
+    HostName         = "DC01"
+    StaticIPSuffix   = ".250"
+    DomainMode       = "WinThreshold"
+    ForestMode       = "WinThreshold"
+}
+
 function Set-IPAddress {
+    try {
+        # Get info: adapter, IP, gateway
+        $NetAdapter = Get-CimInstance -Class Win32_NetworkAdapter -Property NetConnectionID,NetConnectionStatus | Where-Object { $_.NetConnectionStatus -eq 2 } | Select-Object -Property NetConnectionID -ExpandProperty NetConnectionID
+        $IPAddress = Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias $NetAdapter | Select-Object -ExpandProperty IPAddress
+        $Gateway = ((Get-NetIPConfiguration -InterfaceAlias $NetAdapter).IPv4DefaultGateway).NextHop
+        $IPByte = $IPAddress.Split(".")
 
-    # Get info: adapter, IP, gateway
-    $NetAdapter=Get-CimInstance -Class Win32_NetworkAdapter -Property NetConnectionID,NetConnectionStatus | Where-Object { $_.NetConnectionStatus -eq 2 } | Select-Object -Property NetConnectionID -ExpandProperty NetConnectionID
-    $IPAddress=Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias $NetAdapter | Select-Object -ExpandProperty IPAddress
-    $Gateway=((Get-NetIPConfiguration -InterfaceAlias $NetAdapter).IPv4DefaultGateway).NextHop
-    $IPByte = $IPAddress.Split(".")
-
-    # Check IP and set static
-    if ($IPByte[0] -eq "169" -And $IPByte[1] -eq "254") {
-        Write-Host("`n [ ERREUR ] - $IPaddress est une adresse Link-Local, paramètre réseau de la VM à vérifier. `n`n")
-        exit
-    }else{
-        $StaticIP = ($IPByte[0]+"."+$IPByte[1]+"."+$IPByte[2]+".250")
-        netsh interface ipv4 set address name="$NetAdapter" static $StaticIP 255.255.255.0 $Gateway
-        Set-DnsClientServerAddress -InterfaceAlias $NetAdapter -ServerAddresses ("127.0.0.1","1.1.1.1")
-    
+        # Check IP and set static
+        if ($IPByte[0] -eq "169" -And $IPByte[1] -eq "254") {
+            Write-Host "`n[ERREUR] $IPAddress est une adresse Link-Local, paramètres réseau de la VM à vérifier.`n" -ForegroundColor Red
+            Read-Host "Appuyez sur Entrée pour quitter"
+            exit 1
+        }
+        else {
+            $StaticIP = ($IPByte[0] + "." + $IPByte[1] + "." + $IPByte[2] + $Config.StaticIPSuffix)
+            Write-Host "Configuration de l'IP statique: $StaticIP" -ForegroundColor Green
+            netsh interface ipv4 set address name="$NetAdapter" static $StaticIP 255.255.255.0 $Gateway
+            Set-DnsClientServerAddress -InterfaceAlias $NetAdapter -ServerAddresses ("127.0.0.1","1.1.1.1")
+        }
     }
-  }
+    catch {
+        Write-Error "Erreur lors de la configuration IP: $($_.Exception.Message)"
+        Read-Host "Appuyez sur Entrée pour quitter"
+        exit 1
+    }
+}
 
 function Nuke-Defender{
 
@@ -121,15 +143,34 @@ function Add-User{
 }
 
 function Build-Server{
-    Write-host("`n  [++] Installation de Active Directory Domain Services (ADDS)")
-    Install-windowsfeature -name AD-Domain-Services -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
+    try {
+        Write-Host "`n  [++] Installation de Active Directory Domain Services (ADDS)" -ForegroundColor Cyan
+        Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
 
-    Write-host("`n  [++] Importing Module ActiveDirectory")
-    Import-Module ActiveDirectory -WarningAction SilentlyContinue | Out-Null
-    
-    Write-host("`n  [++] Installation du domaine nevasec.local")
-    Install-ADDSForest -SkipPreChecks -CreateDnsDelegation:$false -DatabasePath "C:\Windows\NTDS" -DomainMode "WinThreshold" -DomainName "NEVASEC.LOCAL" -DomainNetbiosName "NEVASEC" -ForestMode "WinThreshold" -InstallDns:$true -LogPath "C:\Windows\NTDS" -NoRebootOnCompletion:$false -SysvolPath "C:\Windows\SYSVOL" -Force:$true -SafeModeAdministratorPassword (Convertto-SecureString -AsPlainText "R00tR00t" -Force) -WarningAction SilentlyContinue | Out-Null
+        Write-Host "`n  [++] Import du module ActiveDirectory" -ForegroundColor Cyan
+        Import-Module ActiveDirectory -WarningAction SilentlyContinue | Out-Null
 
+        Write-Host "`n  [++] Installation du domaine $($Config.DomainFQDN)" -ForegroundColor Cyan
+        Install-ADDSForest -SkipPreChecks `
+            -CreateDnsDelegation:$false `
+            -DatabasePath "C:\Windows\NTDS" `
+            -DomainMode $Config.DomainMode `
+            -DomainName $Config.DomainFQDN `
+            -DomainNetbiosName $Config.DomainNetBIOS `
+            -ForestMode $Config.ForestMode `
+            -InstallDns:$true `
+            -LogPath "C:\Windows\NTDS" `
+            -NoRebootOnCompletion:$false `
+            -SysvolPath "C:\Windows\SYSVOL" `
+            -Force:$true `
+            -SafeModeAdministratorPassword (ConvertTo-SecureString -AsPlainText $Config.SafeModeAdminPwd -Force) `
+            -WarningAction SilentlyContinue | Out-Null
+    }
+    catch {
+        Write-Error "Erreur lors de l'installation d'Active Directory: $($_.Exception.Message)"
+        Read-Host "Appuyez sur Entrée pour quitter"
+        exit 1
+    }
 }
 
 function Add-ServerContent{
@@ -254,32 +295,51 @@ function Add-ServerContent{
 
 
 function Invoke-LabSetup{
-    if($env:COMPUTERNAME -ne "DC01" ){
-        Write-Host("Premiere execution detectee. Changement des parametres reseau...")
+    if ($env:COMPUTERNAME -ne $Config.HostName) {
+        Write-Host "`n[ETAPE 1/3] Première exécution détectée" -ForegroundColor Cyan
+        Write-Host "Changement des paramètres réseau..." -ForegroundColor Yellow
         Set-IPAddress
-        Write-Host("Suppression de l'antivirus...")
+        Write-Host "Suppression de l'antivirus..." -ForegroundColor Yellow
         Nuke-Defender
-        Write-Host("Changement QoL")
+        Write-Host "Améliorations QoL..." -ForegroundColor Yellow
         Get-QoL
-        Write-Host("Le serveur va etre renomme puis redemarrer")
+        Write-Host "`nLe serveur va être renommé en $($Config.HostName) puis redémarrer" -ForegroundColor Green
         Start-Sleep -Seconds 5
-        Rename-Computer -NewName "DC01" -Restart
-    }elseif($env:USERDNSDOMAIN -ne "nevasec.LOCAL"){
-        Write-Host("Deuxieme execution detectee. Installation des roles...")
+        Rename-Computer -NewName $Config.HostName -Restart
+    }
+    elseif ($env:USERDNSDOMAIN -ne $Config.DomainFQDN) {
+        Write-Host "`n[ETAPE 2/3] Deuxième exécution détectée" -ForegroundColor Cyan
+        Write-Host "Installation des rôles Active Directory..." -ForegroundColor Yellow
         Build-Server
-    }elseif ($env:COMPUTERNAME -eq "DC01" -and $env:USERDNSDOMAIN -eq "NEVASEC.LOCAL") {
+    }
+    elseif ($env:COMPUTERNAME -eq $Config.HostName -and $env:USERDNSDOMAIN -eq $Config.DomainFQDN) {
         $exists = $false
         try {
             $user = Get-ADUser -Identity "svc-sql" -ErrorAction Stop
             $exists = $true
-            Write-Host("Tout est deja installe !")
-        } catch {
+            Write-Host "`n[INFO] Le lab est déjà configuré !" -ForegroundColor Green
+        }
+        catch {
             $exists = $false
         }
+
         if (-not $exists) {
-            # Exécution normale : contenu pas encore déployé
-            Write-Host("Troisieme execution detectee. Ajout du contenu...")
-            Add-ServerContent
+            Write-Host "`n[ETAPE 3/3] Troisième exécution détectée" -ForegroundColor Cyan
+            Write-Host "Ajout du contenu AD (utilisateurs, groupes, GPO, etc.)..." -ForegroundColor Yellow
+            try {
+                Add-ServerContent
+                Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminée !" -ForegroundColor Green
+                Write-Host "`nN'oubliez pas les étapes manuelles:" -ForegroundColor Yellow
+                Write-Host "  1. Ajouter les permissions de réplication au groupe Backup" -ForegroundColor Yellow
+                Write-Host "  2. Créer le template de certificat VPNCert" -ForegroundColor Yellow
+                Write-Host "  3. Exécuter sur DC01 après config de SRV01:" -ForegroundColor Yellow
+                Write-Host "     Get-ADComputer -Identity SRV01 | Set-ADAccountControl -TrustedForDelegation `$true" -ForegroundColor Yellow
+            }
+            catch {
+                Write-Error "Erreur lors de l'ajout du contenu: $($_.Exception.Message)"
+                Read-Host "Appuyez sur Entrée pour quitter"
+                exit 1
+            }
         }
     }
 }

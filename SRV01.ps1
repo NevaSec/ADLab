@@ -1,76 +1,141 @@
 #Requires -RunAsAdministrator
 
+# ============================================
+# Configuration centralisée
+# ============================================
+$Config = @{
+    DomainName       = "NEVASEC"
+    DomainFQDN       = "NEVASEC.LOCAL"
+    DomainAdminUser  = "Administrateur"
+    DomainAdminPwd   = "R00tR00t"
+    HostName         = "SRV01"
+    DCStaticIPSuffix = ".250"
+    LocalAdminUser   = "srvadmin"
+    LocalAdminPwd    = "Super-Password-4-Admin"
+    LLMNRUser        = "NEVASEC\mlaurens"
+    LLMNRPwd         = "!0Nevagrup0!"
+}
+
 function Invoke-LabSetup { 
 
-    if ($env:COMPUTERNAME -ne "SRV01") { 
-    
-        write-host ("`n Changement des paramètres IP et du nom et reboot...")
+    if ($env:COMPUTERNAME -ne $Config.HostName) {
+        Write-Host "`n[ETAPE 1/3] Changement des paramètres IP et du nom, puis redémarrage..." -ForegroundColor Cyan
 
-        # Désactivation Windows Update
-        Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
-        Set-Service wuauserv -StartupType Disabled
-        Stop-Service bits -Force -ErrorAction SilentlyContinue
-        Set-Service bits -StartupType Disabled
-        Stop-Service dosvc -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\dosvc" -Name "Start" -Value 4
-        takeown /f "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /a /r > $null 2>&1
-        icacls "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /grant administrators:F /t > $null 2>&1
-        New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name NoAutoUpdate -Value 1
+        try {
+            # Désactivation Windows Update
+            Write-Host "Désactivation de Windows Update..." -ForegroundColor Yellow
+            Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
+            Set-Service wuauserv -StartupType Disabled
+            Stop-Service bits -Force -ErrorAction SilentlyContinue
+            Set-Service bits -StartupType Disabled
+            Stop-Service dosvc -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\dosvc" -Name "Start" -Value 4
+            takeown /f "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /a /r > $null 2>&1
+            icacls "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /grant administrators:F /t > $null 2>&1
+            New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name NoAutoUpdate -Value 1
 
-        $NetAdapter=Get-CimInstance -Class Win32_NetworkAdapter -Property NetConnectionID,NetConnectionStatus | Where-Object { $_.NetConnectionStatus -eq 2 } | Select-Object -Property NetConnectionID -ExpandProperty NetConnectionID
-        $IPAddress=Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias $NetAdapter | Select-Object -ExpandProperty IPAddress
-        $IPByte = $IPAddress.Split(".")
-        $DNS = ($IPByte[0]+"."+$IPByte[1]+"."+$IPByte[2]+".250")
-        Set-DnsClientServerAddress -InterfaceAlias $NetAdapter -ServerAddresses ("$DNS","1.1.1.1")
-        Disable-NetAdapterPowerManagement -Name "$NetAdapter"
-        netsh interface ipv6 set dnsservers "$NetAdapter" dhcp
+            $NetAdapter = Get-CimInstance -Class Win32_NetworkAdapter -Property NetConnectionID,NetConnectionStatus | Where-Object { $_.NetConnectionStatus -eq 2 } | Select-Object -Property NetConnectionID -ExpandProperty NetConnectionID
+            $IPAddress = Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias $NetAdapter | Select-Object -ExpandProperty IPAddress
+            $IPByte = $IPAddress.Split(".")
+            $DNS = ($IPByte[0] + "." + $IPByte[1] + "." + $IPByte[2] + $Config.DCStaticIPSuffix)
 
-        Rename-Computer -NewName "SRV01" -Restart
+            Write-Host "Configuration DNS: $DNS" -ForegroundColor Green
+            Set-DnsClientServerAddress -InterfaceAlias $NetAdapter -ServerAddresses ("$DNS","1.1.1.1")
+            Disable-NetAdapterPowerManagement -Name "$NetAdapter"
+            netsh interface ipv6 set dnsservers "$NetAdapter" dhcp
 
-    }
-    elseif ($env:COMPUTERNAME -eq "SRV01" -and $env:USERDNSDOMAIN -ne "NEVASEC.LOCAL") {
-        write-host ("`n Ajout au domaine et reboot...")
-
-        Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled False | Out-Null
-        
-        $domain = "NEVASEC"
-        $password = "R00tR00t" | ConvertTo-SecureString -asPlainText -Force
-        $username = "$domain\Administrateur" 
-        $credential = New-Object System.Management.Automation.PSCredential($username,$password)
-        #Verif ping du domaine avant lancement de la connection
-        if (Test-Connection -ComputerName "NEVASEC.local" -Count 5 -Quiet) { 
-            Add-Computer -DomainName $domain -Credential $credential  | Out-Null
-            Start-Sleep 5
-            restart-computer
-        } else {
-            Write-Error "Erreur Impossible de Ping l'AD Vérfier la connectivité ou le DNS... Arrêt dans 5sec !"
-            Start-Sleep 5
+            Write-Host "Renommage de la machine en $($Config.HostName)..." -ForegroundColor Green
+            Rename-Computer -NewName $Config.HostName -Restart
+        }
+        catch {
+            Write-Error "Erreur lors de la configuration initiale: $($_.Exception.Message)"
+            Read-Host "Appuyez sur Entrée pour quitter"
+            exit 1
         }
     }
-    else { # Create credentials file
-        write-host ("`n Configuration finale...")
-        
-        $username = 'NEVASEC\mlaurens'
-        $password = ConvertTo-SecureString '!0Nevagrup0!' -AsPlainText -Force
-        $credential = New-Object System.Management.Automation.PSCredential -ArgumentList $username, $password
-        $credential | Export-CliXml -Path "C:\secure_credentials.xml"
-        
-        # Create the PowerShell script to perform LLMNR trigger
-        $scriptContent = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("dwBoAGkAbABlACAAKAAkAHQAcgB1AGUAKQAgAHsACgAgACAAJABjAHIAZQBkAGUAbgB0AGkAYQBsACAAPQAgAEkAbQBwAG8AcgB0AC0AQwBsAGkAWABtAGwAIAAtAFAAYQB0AGgAIAAiAEMAOgBcAHMAZQBjAHUAcgBlAF8AYwByAGUAZABlAG4AdABpAGEAbABzAC4AeABtAGwAIgAKACAAIABTAHQAYQByAHQALQBQAHIAbwBjAGUAcwBzACAALQBGAGkAbABlAFAAYQB0AGgAIAAiAHAAbwB3AGUAcgBzAGgAZQBsAGwALgBlAHgAZQAiACAALQBBAHIAZwB1AG0AZQBuAHQATABpAHMAdAAgACIALQBDAG8AbQBtAGEAbgBkACAAbABzACAAXABcAFMAUQBMADAAMQBcAEMAJAAiACAALQBDAHIAZQBkAGUAbgB0AGkAYQBsACAAJABjAHIAZQBkAGUAbgB0AGkAYQBsAAoAIAAgAFMAdABhAHIAdAAtAFMAbABlAGUAcAAgAC0AUwBlAGMAbwBuAGQAcwAgADEAMgAwAAoAfQA="))
-        $group = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("VQB0AGkAbABpAHMAYQB0AGUAdQByAHMAIABkAHUAIABCAHUAcgBlAGEAdQAgAOAAIABkAGkAcwB0AGEAbgBjAGUA"))
-        
-        $scriptPath = "C:\llmnr_trigger.ps1"
-        $scriptContent | Set-Content -Path $scriptPath
-        
-        # Add the script to the Run registry key for startup
-        if (-not (Test-Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run")) {
-            New-Item -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" -Force
+    elseif ($env:COMPUTERNAME -eq $Config.HostName -and $env:USERDNSDOMAIN -ne $Config.DomainFQDN) {
+        Write-Host "`n[ETAPE 2/3] Ajout au domaine et redémarrage..." -ForegroundColor Cyan
+
+        try {
+            Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled False | Out-Null
+
+            $password = $Config.DomainAdminPwd | ConvertTo-SecureString -asPlainText -Force
+            $username = "$($Config.DomainName)\$($Config.DomainAdminUser)"
+            $credential = New-Object System.Management.Automation.PSCredential($username, $password)
+
+            # Vérification de la connectivité au domaine avant jonction
+            Write-Host "Test de connectivité au domaine $($Config.DomainFQDN)..." -ForegroundColor Yellow
+            if (Test-Connection -ComputerName $Config.DomainFQDN -Count 5 -Quiet) {
+                Write-Host "Domaine accessible, jonction en cours..." -ForegroundColor Green
+                Add-Computer -DomainName $Config.DomainName -Credential $credential -ErrorAction Stop | Out-Null
+                Start-Sleep 5
+                Restart-Computer
+            }
+            else {
+                Write-Error "Impossible de joindre le domaine $($Config.DomainFQDN)"
+                Write-Host "`nVérifications à effectuer:" -ForegroundColor Yellow
+                Write-Host "  1. DC01 est-il démarré ?" -ForegroundColor Yellow
+                Write-Host "  2. Le DNS pointe-t-il vers DC01 ? (Get-DnsClientServerAddress)" -ForegroundColor Yellow
+                Write-Host "  3. Pouvez-vous pinger DC01 ?" -ForegroundColor Yellow
+                Read-Host "`nAppuyez sur Entrée pour quitter"
+                exit 1
+            }
         }
-        Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LLMNR_Trigger_Script" -Value "powershell.exe -ExecutionPolicy Bypass -NoProfile -File `"$scriptPath`"" 
-        New-LocalUser -Name srvadmin -Password (ConvertTo-SecureString "Super-Password-4-Admin" -AsPlainText -Force)
-        Add-LocalGroupMember -Group $group -Member 'NEVASEC\Admins du domaine'
-        Add-LocalGroupMember -Group $group -Member 'NEVASEC\IT'
-        Add-LocalGroupMember -Group 'Administrateurs' -Member 'NEVASEC\IT'
-    }     
+        catch {
+            Write-Error "Erreur lors de la jonction au domaine: $($_.Exception.Message)"
+            Write-Host "`nAssurez-vous que:" -ForegroundColor Yellow
+            Write-Host "  - DC01 a terminé son installation complète (3 exécutions)" -ForegroundColor Yellow
+            Write-Host "  - Le DNS est correctement configuré" -ForegroundColor Yellow
+            Write-Host "  - Les credentials du domaine sont corrects" -ForegroundColor Yellow
+            Read-Host "`nAppuyez sur Entrée pour quitter"
+            exit 1
+        }
+    }
+    else {
+        Write-Host "`n[ETAPE 3/3] Configuration finale..." -ForegroundColor Cyan
+
+        try {
+            # Création du fichier de credentials pour LLMNR trigger
+            Write-Host "Création du fichier de credentials pour l'attaque LLMNR..." -ForegroundColor Yellow
+            $username = $Config.LLMNRUser
+            $password = ConvertTo-SecureString $Config.LLMNRPwd -AsPlainText -Force
+            $credential = New-Object System.Management.Automation.PSCredential -ArgumentList $username, $password
+            $credential | Export-CliXml -Path "C:\secure_credentials.xml"
+
+            # Création du script PowerShell de déclenchement LLMNR
+            $scriptContent = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("dwBoAGkAbABlACAAKAAkAHQAcgB1AGUAKQAgAHsACgAgACAAJABjAHIAZQBkAGUAbgB0AGkAYQBsACAAPQAgAEkAbQBwAG8AcgB0AC0AQwBsAGkAWABtAGwAIAAtAFAAYQB0AGgAIAAiAEMAOgBcAHMAZQBjAHUAcgBlAF8AYwByAGUAZABlAG4AdABpAGEAbABzAC4AeABtAGwAIgAKACAAIABTAHQAYQByAHQALQBQAHIAbwBjAGUAcwBzACAALQBGAGkAbABlAFAAYQB0AGgAIAAiAHAAbwB3AGUAcgBzAGgAZQBsAGwALgBlAHgAZQAiACAALQBBAHIAZwB1AG0AZQBuAHQATABpAHMAdAAgACIALQBDAG8AbQBtAGEAbgBkACAAbABzACAAXABcAFMAUQBMADAAMQBcAEMAJAAiACAALQBDAHIAZQBkAGUAbgB0AGkAYQBsACAAJABjAHIAZQBkAGUAbgB0AGkAYQBsAAoAIAAgAFMAdABhAHIAdAAtAFMAbABlAGUAcAAgAC0AUwBlAGMAbwBuAGQAcwAgADEAMgAwAAoAfQA="))
+            $group = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("VQB0AGkAbABpAHMAYQB0AGUAdQByAHMAIABkAHUAIABCAHUAcgBlAGEAdQAgAOAAIABkAGkAcwB0AGEAbgBjAGUA"))
+
+            $scriptPath = "C:\llmnr_trigger.ps1"
+            $scriptContent | Set-Content -Path $scriptPath
+            Write-Host "Script LLMNR créé: $scriptPath" -ForegroundColor Green
+
+            # Ajout du script au démarrage
+            if (-not (Test-Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run")) {
+                New-Item -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" -Force | Out-Null
+            }
+            Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LLMNR_Trigger_Script" -Value "powershell.exe -ExecutionPolicy Bypass -NoProfile -File `"$scriptPath`""
+            Write-Host "Script LLMNR ajouté au démarrage automatique" -ForegroundColor Green
+
+            # Création de l'utilisateur local
+            Write-Host "Création de l'utilisateur local $($Config.LocalAdminUser)..." -ForegroundColor Yellow
+            New-LocalUser -Name $Config.LocalAdminUser -Password (ConvertTo-SecureString $Config.LocalAdminPwd -AsPlainText -Force) -ErrorAction SilentlyContinue
+
+            # Ajout des groupes du domaine
+            Write-Host "Ajout des groupes du domaine aux administrateurs locaux..." -ForegroundColor Yellow
+            Add-LocalGroupMember -Group $group -Member 'NEVASEC\Admins du domaine' -ErrorAction SilentlyContinue
+            Add-LocalGroupMember -Group $group -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
+            Add-LocalGroupMember -Group 'Administrateurs' -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
+
+            Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminée !" -ForegroundColor Green
+            Write-Host "N'oubliez pas d'exécuter sur DC01:" -ForegroundColor Yellow
+            Write-Host "  Get-ADComputer -Identity SRV01 | Set-ADAccountControl -TrustedForDelegation `$true" -ForegroundColor Yellow
+        }
+        catch {
+            Write-Error "Erreur lors de la configuration finale: $($_.Exception.Message)"
+            Read-Host "Appuyez sur Entrée pour quitter"
+            exit 1
+        }
+    }
 } 
