@@ -24,7 +24,7 @@ Les machines Windows se trouvent dans le domaine `NEVASEC.LOCAL`
 - Télécharger l'ISO **EN FRANÇAIS**
   - [Windows Server 2022](https://www.microsoft.com/fr-fr/evalcenter/download-windows-server-2022) (utilisé pour DC01, SRV01 **et PC01**)
 - Créer les VM dans un hyperviseur en les nommant DC01, SRV01 & PC01.
-  - Pour VirtualBox, ajouter le fichier ISO. **Mais cocher la case `Skip Unattended Installation`**
+  - Pour VirtualBox, ajouter le fichier ISO. ⚠️IMPORTANT⚠️ : **Décocher la case `Proceed with Unattended Installation`**
   - Pour VMware, **ne pas ajouter le fichier ISO à la création de la VM, choisir `I will install the operating system later`**. Puis ajouter l'ISO dans le lecteur CD quand la VM est créée.
 - Configuration des VM
   - Recommandé: 3072MB de RAM, 1 CPU
