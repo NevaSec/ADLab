@@ -114,7 +114,6 @@ function Invoke-LabSetup {
         Write-Host "`n[ETAPE 2/3] Ajout au domaine et redémarrage..." -ForegroundColor Cyan
 
         try {
-            Nuke-Defender
 
             $password = $Config.DomainAdminPwd | ConvertTo-SecureString -asPlainText -Force
             $username = "$($Config.DomainName)\$($Config.DomainAdminUser)"
