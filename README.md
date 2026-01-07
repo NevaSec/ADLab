@@ -66,7 +66,7 @@ Une fois que le script a été executé trois fois, il faut faire quelques confi
 - Cliquer sur Démarrer et chercher "cert" puis cliquer sur `Autorité de certification`
 - Dérouler la liste sous `NEVASEC-DC01-CA` puis faire clic-droit sur `Modèles de certificats` et cliquer sur `Gérer`
 - Clic-droit sur le modèle `Utilisateur` puis `Dupliquer le modèle`
-- Dans l'onglet `Général` donner le nom `VPNCert` au modèle
+- Dans l'onglet `Général` donner le nom `VPNCert` au modèle (**Nom complet du modèle**)
 - Dans l'onglet `Nom du sujet` cliquer sur `Fournir dans la demande`
 - Cliquer sur `Appliquer` puis `OK`
 - Fermer la fenêtre "Console des modèles de certificat"
