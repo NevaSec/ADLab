@@ -294,8 +294,122 @@ function Add-ServerContent{
     # ACLs
     Write-Host("`n  [++] Configuration ACLs")
     Set-VulnerableACLs
+
+    # Certificate template
+    Write-Host("`n  [++] Configuration ADCS template")
+    New-VulnerableCertTemplate -DisplayName "VPNCert" -SourceTemplateCN "User"
 }
 
+
+function New-VulnerableCertTemplate {
+    param(
+        [string]$DisplayName = "VPNCert",
+        [string]$SourceTemplateCN = "User"
+    )
+
+    $ConfigNC = (Get-ADRootDSE).configurationNamingContext
+    $TemplatePath = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$ConfigNC"
+
+    # Get source template by CN (CN is always in English)
+    $Source = Get-ADObject -SearchBase $TemplatePath -Filter "cn -eq '$SourceTemplateCN'" -Properties *
+
+    if (-not $Source) {
+        Write-Host "    Template source introuvable: $SourceTemplateCN" -ForegroundColor Red
+        return
+    }
+
+    # Generate unique OID for the new template
+    $OIDPath = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
+    $ExistingOIDs = Get-ADObject -SearchBase $OIDPath -Filter "objectClass -eq 'msPKI-Enterprise-Oid'" -Properties msPKI-Cert-Template-OID | Select-Object -First 1
+    if ($ExistingOIDs) {
+        $ForestOID = ($ExistingOIDs.'msPKI-Cert-Template-OID') -replace '\.\d+\.\d+$', ''
+    } else {
+        $ForestOID = "1.3.6.1.4.1.311.21.8"
+    }
+    $Part1 = Get-Random -Minimum 10000000 -Maximum 99999999
+    $Part2 = Get-Random -Minimum 10000000 -Maximum 99999999
+    $NewOID = "$ForestOID.$Part1.$Part2"
+    $OIDName = $DisplayName.Replace(' ','') + "-" + (Get-Random -Minimum 10000 -Maximum 99999)
+
+    # Create OID object for the new template
+    New-ADObject -Path $OIDPath -Name $OIDName -Type "msPKI-Enterprise-Oid" -OtherAttributes @{
+        'displayName' = $DisplayName
+        'flags' = [System.Int32]1
+        'msPKI-Cert-Template-OID' = $NewOID
+    }
+
+    # Binary attributes - 1 year validity, 6 weeks overlap
+    $pKIExpirationPeriod = [byte[]](0x00, 0x80, 0x1A, 0x06, 0x00, 0x00, 0x00, 0x00)
+    $pKIOverlapPeriod = [byte[]](0x00, 0x80, 0xA6, 0x0A, 0x02, 0x00, 0x00, 0x00)
+    $pKIKeyUsage = [byte[]](0xA0, 0x00)
+
+    # Prepare attributes for new template
+    $TemplateAttrs = @{
+        'displayName' = $DisplayName
+        'msPKI-Cert-Template-OID' = $NewOID
+        'flags' = [System.Int32]131649
+        'revision' = [System.Int32]100
+        'msPKI-Template-Schema-Version' = [System.Int32]2
+        'msPKI-Template-Minor-Revision' = [System.Int32]1
+        'msPKI-RA-Signature' = [System.Int32]0
+        'pKIMaxIssuingDepth' = [System.Int32]0
+        'pKIDefaultKeySpec' = [System.Int32]1
+        'msPKI-Enrollment-Flag' = [System.Int32]0
+        'msPKI-Private-Key-Flag' = [System.Int32]16842752
+        'msPKI-Minimal-Key-Size' = [System.Int32]2048
+        'msPKI-Certificate-Name-Flag' = [System.Int32]1
+        'pKIExtendedKeyUsage' = @('1.3.6.1.5.5.7.3.2')
+        'msPKI-Certificate-Application-Policy' = @('1.3.6.1.5.5.7.3.2')
+        'pKICriticalExtensions' = @('2.5.29.15')
+        'pKIDefaultCSPs' = @('1,Microsoft RSA SChannel Cryptographic Provider')
+        'pKIExpirationPeriod' = $pKIExpirationPeriod
+        'pKIOverlapPeriod' = $pKIOverlapPeriod
+        'pKIKeyUsage' = $pKIKeyUsage
+    }
+
+    # Create new template (no -DisplayName parameter, it's in OtherAttributes)
+    $TemplateCN = $DisplayName.Replace(' ','')
+    New-ADObject -Path $TemplatePath -Name $TemplateCN -Type pKICertificateTemplate -OtherAttributes $TemplateAttrs
+
+    # Wait for replication
+    Start-Sleep -Seconds 2
+
+    # Set permissions - Allow Domain Users to Enroll
+    $TemplateObj = Get-ADObject -SearchBase $TemplatePath -Filter "cn -eq '$TemplateCN'"
+    if (-not $TemplateObj) {
+        Write-Host "    Erreur: template non cree" -ForegroundColor Red
+        return
+    }
+
+    $DomainUsersSID = (Get-ADGroup -Identity "Utilisateurs du domaine").SID
+    $acl = Get-Acl "AD:$($TemplateObj.DistinguishedName)"
+
+    # Enroll permission (Extended Right)
+    $EnrollGUID = [GUID]"0e10c968-78fb-11d2-90d4-00c04f79dc55"
+    $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+        $DomainUsersSID,
+        "ExtendedRight",
+        "Allow",
+        $EnrollGUID
+    )
+    $acl.AddAccessRule($ace)
+
+    # Read permission
+    $ace2 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+        $DomainUsersSID,
+        "GenericRead",
+        "Allow"
+    )
+    $acl.AddAccessRule($ace2)
+    Set-Acl "AD:$($TemplateObj.DistinguishedName)" $acl
+
+    # Publish template to CA
+    $EnrollmentPath = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$ConfigNC"
+    $CAs = Get-ADObject -SearchBase $EnrollmentPath -SearchScope OneLevel -Filter *
+    foreach ($CA in $CAs) {
+        Set-ADObject -Identity $CA.DistinguishedName -Add @{certificateTemplates=$TemplateCN}
+    }
+}
 
 function Set-VulnerableACLs {
     Import-Module ActiveDirectory
@@ -370,10 +484,9 @@ function Invoke-LabSetup{
             try {
                 Add-ServerContent
                 Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminee !" -ForegroundColor Green
-                Write-Host "`nEtapes manuelles:" -ForegroundColor Yellow
-                Write-Host "  1. Creer le template de certificat VPNCert" -ForegroundColor Yellow
-                Write-Host "  2. Executer sur DC01 apres config de SRV01:" -ForegroundColor Yellow
-                Write-Host "     Get-ADComputer -Identity SRV01 | Set-ADAccountControl -TrustedForDelegation `$true" -ForegroundColor Yellow
+                Write-Host "`nEtape manuelle:" -ForegroundColor Yellow
+                Write-Host "  Executer sur DC01 apres config de SRV01:" -ForegroundColor Yellow
+                Write-Host "  Get-ADComputer -Identity SRV01 | Set-ADAccountControl -TrustedForDelegation `$true" -ForegroundColor Yellow
             }
             catch {
                 Write-Error "Erreur: $($_.Exception.Message)"
