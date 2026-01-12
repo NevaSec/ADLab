@@ -55,13 +55,6 @@ $c = @{ '1' = 'DC01'; '2' = 'SRV01'; '3' = 'PC01' }; $s = Read-Host "Machine à 
 
 Une fois que le script a été executé trois fois, il faut faire quelques configurations.
 
-##### Ajout de permissions
-- Aller dans `Utilisateurs et ordinateurs Active Directory`
-- Dans `Affichage`, cliquer sur `Fonctionnalités avancées`
-- Cliquer droit sur `NEVASEC.local` dans l'arborescence et cliquer `Propriétés`
-- Dans l'onglet `Sécurité`, `Ajouter...` ajouter le groupe `Backup`
-- Sélectionner le groupe `Backup` et Autoriser les permissions `Réplication de toutes les modifications de l'annuaire`, `Réplication des changements de répertoire` et `Réplication des changements de répertoires dans un ensemble filtré`
-
 ##### Ajout d'un template de certificat
 - Cliquer sur Démarrer et chercher "cert" puis cliquer sur `Autorité de certification`
 - Dérouler la liste sous `NEVASEC-DC01-CA` puis faire clic-droit sur `Modèles de certificats` et cliquer sur `Gérer`
