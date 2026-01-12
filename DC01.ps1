@@ -293,8 +293,58 @@ function Add-ServerContent{
     
     # GPP password
     New-Item "\\DC01\sysvol\nevasec.local\Policies\Groups.xml" -ItemType File -Value ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("PAA/AHgAbQBsACAAdgBlAHIAcwBpAG8AbgA9ACIAMQAuADAAIgAgAGUAbgBjAG8AZABpAG4AZwA9ACIAdQB0AGYALQA4ACIAIAA/AD4ADQAKADwARwByAG8AdQBwAHMAIABjAGwAcwBpAGQAPQAiAHsAZQAxADgAYgBkADMAMABiAC0AYwA3AGIAZAAtAGMAOQA5AGYALQA3ADgAYgBiAC0AMgAwADYAYgA0ADMANABkADAAYgAwADgAfQAiAD4ADQAKAAkAPABVAHMAZQByACAAYwBsAHMAaQBkAD0AIgB7AEQARgA1AEYAMQA4ADUANQAtADUAMQBFADUALQA0AGQAMgA0AC0AOABCADEAQQAtAEQAOQBCAEQARQA5ADgAQgBBADEARAAxAH0AIgAgAG4AYQBtAGUAPQAiAEEAZABtAGkAbgBpAHMAdAByAGEAdABvAHIAIAAoAGIAdQBpAGwAdAAtAGkAbgApACIAIABpAG0AYQBnAGUAPQAiADIAIgAgAGMAaABhAG4AZwBlAGQAPQAiADIAMAAxADUALQAwADIALQAxADgAIAAwADEAOgA1ADMAOgAwADEAIgAgAHUAaQBkAD0AIgB7AEQANQBGAEUANwAzADUAMgAtADgAMQBFADEALQA0ADIAQQAyAC0AQgA3AEQAQQAtADEAMQA4ADQAMAAyAEIARQA0AEMAMwAzAH0AIgA+AA0ACgAJAAkAPABQAHIAbwBwAGUAcgB0AGkAZQBzACAAYQBjAHQAaQBvAG4APQAiAFUAIgAgAG4AZQB3AE4AYQBtAGUAPQAiACIAIABmAHUAbABsAE4AYQBtAGUAPQAiACIAIABkAGUAcwBjAHIAaQBwAHQAaQBvAG4APQAiACIAIABjAHAAYQBzAHMAdwBvAHIAZAA9ACIAUgBJADEAMwAzAEIAMgBXAGwAMgBDAGkASQAwAEMAYQB1ADEARAB0AHIAdABUAGUAMwB3AGQARgB3AHoAQwBpAFcAQgA1AFAAUwBBAHgAWABNAEQAcwB0AGMAaABKAHQAMwBiAEwAMABVAGkAZQAwAEIAYQBaAC8ANwByAGQAUQBqAHUAZwBUAG8AbgBGADMAWgBXAEEASwBhADEAaQBSAHYAZAA0AEoARwBRACIAIABjAGgAYQBuAGcAZQBMAG8AZwBvAG4APQAiADAAIgAgAG4AbwBDAGgAYQBuAGcAZQA9ACIAMAAiACAAbgBlAHYAZQByAEUAeABwAGkAcgBlAHMAPQAiADAAIgAgAGEAYwBjAHQARABpAHMAYQBiAGwAZQBkAD0AIgAwACIAIABzAHUAYgBBAHUAdABoAG8AbgB0AHkAPQAiAFIASQBEAF8AQQBEAE0ASQBOACIAIAB1AHMAZQByAE4AYQBtAGUAPQAiAGkAbgBzAHQAYQBsAGwAcABjACIALwA+AA0ACgAJADwALwBVAHMAZQByAD4ADQAKADwALwBHAHIAbwB1AHAAcwA+AA==")))
+
+    # ACLs vulnérables pour le pentest lab
+    Set-VulnerableACLs
 }
 
+
+function Set-VulnerableACLs {
+    Write-Host("`n  [++] Configuration des ACLs vulnérables pour le lab")
+
+    Import-Module ActiveDirectory
+
+    # 1. Groupe Backup -> Droits de réplication (DCSync) sur le domaine
+    Write-Host("    - Backup -> DCSync sur le domaine")
+    $BackupSID = (Get-ADGroup -Identity "Backup").SID
+    $DomainDN = (Get-ADDomain).DistinguishedName
+    $acl = Get-Acl "AD:$DomainDN"
+    # DS-Replication-Get-Changes
+    $ace1 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($BackupSID, "ExtendedRight", "Allow", [GUID]"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2")
+    $acl.AddAccessRule($ace1)
+    # DS-Replication-Get-Changes-All
+    $ace2 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($BackupSID, "ExtendedRight", "Allow", [GUID]"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2")
+    $acl.AddAccessRule($ace2)
+    Set-Acl "AD:$DomainDN" $acl
+
+    # 2. svc-legacy -> ForceChangePassword sur svc-sql
+    Write-Host("    - svc-legacy -> ForceChangePassword sur svc-sql")
+    $SvcLegacySID = (Get-ADUser -Identity "svc-legacy").SID
+    $SvcSqlDN = (Get-ADUser -Identity "svc-sql").DistinguishedName
+    $acl = Get-Acl "AD:$SvcSqlDN"
+    # User-Force-Change-Password
+    $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($SvcLegacySID, "ExtendedRight", "Allow", [GUID]"00299570-246d-11d0-a768-00aa006e0529")
+    $acl.AddAccessRule($ace)
+    Set-Acl "AD:$SvcSqlDN" $acl
+
+    # 3. svc-sql -> GenericAll sur svc-backup
+    Write-Host("    - svc-sql -> GenericAll sur svc-backup")
+    $SvcSqlSID = (Get-ADUser -Identity "svc-sql").SID
+    $SvcBackupDN = (Get-ADUser -Identity "svc-backup").DistinguishedName
+    $acl = Get-Acl "AD:$SvcBackupDN"
+    $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($SvcSqlSID, "GenericAll", "Allow")
+    $acl.AddAccessRule($ace)
+    Set-Acl "AD:$SvcBackupDN" $acl
+
+    # 4. Groupe IT -> GenericWrite sur le groupe Administrateurs
+    Write-Host("    - IT -> GenericWrite sur groupe Administrateurs")
+    $ITGroupSID = (Get-ADGroup -Identity "IT").SID
+    $AdminGroupDN = (Get-ADGroup -Identity "Administrateurs").DistinguishedName
+    $acl = Get-Acl "AD:$AdminGroupDN"
+    $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($ITGroupSID, "GenericWrite", "Allow")
+    $acl.AddAccessRule($ace)
+    Set-Acl "AD:$AdminGroupDN" $acl
+}
 
 function Invoke-LabSetup{
     if ($env:COMPUTERNAME -ne $Config.HostName) {
@@ -332,9 +382,8 @@ function Invoke-LabSetup{
                 Add-ServerContent
                 Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminée !" -ForegroundColor Green
                 Write-Host "`nN'oubliez pas les étapes manuelles:" -ForegroundColor Yellow
-                Write-Host "  1. Ajouter les permissions de réplication au groupe Backup" -ForegroundColor Yellow
-                Write-Host "  2. Créer le template de certificat VPNCert" -ForegroundColor Yellow
-                Write-Host "  3. Exécuter sur DC01 après config de SRV01:" -ForegroundColor Yellow
+                Write-Host "  1. Créer le template de certificat VPNCert" -ForegroundColor Yellow
+                Write-Host "  2. Exécuter sur DC01 après config de SRV01:" -ForegroundColor Yellow
                 Write-Host "     Get-ADComputer -Identity SRV01 | Set-ADAccountControl -TrustedForDelegation `$true" -ForegroundColor Yellow
             }
             catch {
