@@ -178,11 +178,13 @@ function Add-ServerContent{
     Write-Host("`n  [++] Installation de AD Certificate Services")
     Add-WindowsFeature -Name AD-Certificate -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
   
-    write-host("`n  [++] Installation de ADCS Certificate Authority")
     Add-WindowsFeature -Name Adcs-Cert-Authority -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
-
-    write-host("`n  [++] Configuration de Active Directory Certificate Authority")
+    
     Install-AdcsCertificationAuthority -CAType EnterpriseRootCa -CryptoProviderName "RSA#Microsoft Software Key Storage Provider" -KeyLength 2048 -HashAlgorithmName SHA1 -ValidityPeriod Years -ValidityPeriodUnits 99 -WarningAction SilentlyContinue -Force | Out-Null
+
+    Install-WindowsFeature -Name ADCS-Web-Enrollment -IncludeManagementTools
+
+    Install-AdcsWebEnrollment -Force
 
     write-host("`n  [++] Installation de Remote System Administration Tools (RSAT)")
     Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0 -WarningAction SilentlyContinue | Out-Null
