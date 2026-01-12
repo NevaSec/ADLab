@@ -49,23 +49,6 @@ $c = @{ '1' = 'DC01'; '2' = 'SRV01'; '3' = 'PC01' }; $s = Read-Host "Machine à 
 8. Répéter les étapes 5 & 6
 9. Le serveur va de nouveau redémarrer. Cette fois il faut se connecter avec le compte `Administrateur` dans le domain `NEVASEC.LOCAL` et relancer le script une dernière fois en suivant les étapes 5 & 6.
 
-
-
-#### Configuration manuelle sur le DC
-
-Une fois que le script a été executé trois fois, il faut faire quelques configurations.
-
-##### Ajout d'un template de certificat
-- Cliquer sur Démarrer et chercher "cert" puis cliquer sur `Autorité de certification`
-- Dérouler la liste sous `NEVASEC-DC01-CA` puis faire clic-droit sur `Modèles de certificats` et cliquer sur `Gérer`
-- Clic-droit sur le modèle `Utilisateur` puis `Dupliquer le modèle`
-- Dans l'onglet `Général` donner le nom `VPNCert` au modèle (**Nom complet du modèle**)
-- Dans l'onglet `Nom du sujet` cliquer sur `Fournir dans la demande`
-- Cliquer sur `Appliquer` puis `OK`
-- Fermer la fenêtre "Console des modèles de certificat"
-- Sur la fenête "certsrv" restante faire clic-droit sur `Modèles de certificats` > `Nouveau` > `Modèle de certificat à délivrer`
-- Dans la liste choisir `VPNCert` puis `OK`
-
 ### Setup de SRV01
 - Une fois le DC configuré, installer Windows sur SRV01.
 - Pour le compte `Administrateur` choisir le mot de passe `Sysadmin123!`.
