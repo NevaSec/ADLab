@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 
 # ============================================
-# Configuration centralisée
+# Configuration centralisee
 # ============================================
 $Config = @{
     DomainName       = "NEVASEC"
@@ -24,8 +24,8 @@ function Set-IPAddress {
 
         # Check IP and set static
         if ($IPByte[0] -eq "169" -And $IPByte[1] -eq "254") {
-            Write-Host "`n[ERREUR] $IPAddress est une adresse Link-Local, paramètres réseau de la VM à vérifier.`n" -ForegroundColor Red
-            Read-Host "Appuyez sur Entrée pour quitter"
+            Write-Host "`n[ERREUR] $IPAddress est une adresse Link-Local, parametres reseau de la VM a verifier.`n" -ForegroundColor Red
+            Read-Host "Appuyez sur Entree pour quitter"
             exit 1
         }
         else {
@@ -37,7 +37,7 @@ function Set-IPAddress {
     }
     catch {
         Write-Error "Erreur lors de la configuration IP: $($_.Exception.Message)"
-        Read-Host "Appuyez sur Entrée pour quitter"
+        Read-Host "Appuyez sur Entree pour quitter"
         exit 1
     }
 }
@@ -62,7 +62,7 @@ function Nuke-Defender{
     Set-MpPreference -DisableScriptScanning $true | Out-Null
 
     reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /f /v EnableLUA /t REG_DWORD /d 0 > $null
-    reg add "HKLM\System\CurrentControlSet\Services\SecurityHealthService" /v "Start" /t REG_DWORD /d "4" /f > $null  
+    reg add "HKLM\System\CurrentControlSet\Services\SecurityHealthService" /v "Start" /t REG_DWORD /d "4" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender" /v "DisableAntiSpyware" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender" /v "DisableAntiVirus" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\MpEngine" /v "MpEnablePus" /t REG_DWORD /d "0" /f > $null
@@ -71,7 +71,7 @@ function Nuke-Defender{
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableOnAccessProtection" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableRealtimeMonitoring" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableScanOnRealtimeEnable" /t REG_DWORD /d "1" /f > $null
-    reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableScriptScanning" /t REG_DWORD /d "1" /f > $null 
+    reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableScriptScanning" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Reporting" /v "DisableEnhancedNotifications" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\SpyNet" /v "DisableBlockAtFirstSeen" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\SpyNet" /v "SpynetReporting" /t REG_DWORD /d "0" /f > $null
@@ -87,7 +87,7 @@ function Nuke-Defender{
     reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "LocalAccountTokenFilterPolicy" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v sc_fdrespub /t REG_EXPAND_SZ /d "sc config fdrespub depend= RpcSs/http/fdphost/LanmanWorkstation"  # Sets FDResPub service dependency at system startup
 
-    # Désactivation Windows Update
+    # Disable Windows Update
     Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
     Set-Service wuauserv -StartupType Disabled
     Stop-Service bits -Force -ErrorAction SilentlyContinue
@@ -98,8 +98,8 @@ function Nuke-Defender{
     icacls "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" /grant administrators:F /t > $null 2>&1
     New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name NoAutoUpdate -Value 1
-  
-    # Désactivation du Firewall
+
+    # Disable Firewall
     Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled False | Out-Null
 
     # Uninstall updates
@@ -109,7 +109,7 @@ function Nuke-Defender{
             try {
                 Remove-WindowsPackage -Online -PackageName $_.PackageName -ErrorAction Stop > $null 2>&1
             } catch {
-                # Erreurs ignorées silencieusement
+                # Silently ignored
             }
         }
 
@@ -117,12 +117,10 @@ function Nuke-Defender{
 }
 
 function Get-QoL{
-    write-host("`n  [++] QoL - Thème sombre")
     reg add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v "AppsUseLightTheme" /t REG_DWORD /d "0" /f > $null
     reg add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v "SystemUsesLightTheme" /t REG_DWORD /d "0" /f > $null
 
-    write-host("`n  [++] QoL - Verrouillage session, mise en veille désactivée")
-    reg add  "HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Control Panel\Desktop" /v "ScreenSaveTimeOut" /t REG_DWORD /d "0" /f > $null 
+    reg add  "HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Control Panel\Desktop" /v "ScreenSaveTimeOut" /t REG_DWORD /d "0" /f > $null
     reg add  "HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Control Panel\Desktop" /v "ScreenSaveActive" /t REG_DWORD /d "0" /f > $null
     reg add  "HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Control Panel\Desktop" /v "ScreenSaverIsSecure" /t REG_DWORD /d "0" /f > $null
 
@@ -144,13 +142,13 @@ function Add-User{
 
 function Build-Server{
     try {
-        Write-Host "`n  [++] Installation de Active Directory Domain Services (ADDS)" -ForegroundColor Cyan
+        Write-Host "`n  [++] Installation ADDS" -ForegroundColor Cyan
         Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
 
-        Write-Host "`n  [++] Import du module ActiveDirectory" -ForegroundColor Cyan
+        Write-Host "`n  [++] Import module AD" -ForegroundColor Cyan
         Import-Module ActiveDirectory -WarningAction SilentlyContinue | Out-Null
 
-        Write-Host "`n  [++] Installation du domaine $($Config.DomainFQDN)" -ForegroundColor Cyan
+        Write-Host "`n  [++] Installation domaine $($Config.DomainFQDN)" -ForegroundColor Cyan
         Install-ADDSForest -SkipPreChecks `
             -CreateDnsDelegation:$false `
             -DatabasePath "C:\Windows\NTDS" `
@@ -167,31 +165,31 @@ function Build-Server{
             -WarningAction SilentlyContinue | Out-Null
     }
     catch {
-        Write-Error "Erreur lors de l'installation d'Active Directory: $($_.Exception.Message)"
-        Read-Host "Appuyez sur Entrée pour quitter"
+        Write-Error "Erreur installation AD: $($_.Exception.Message)"
+        Read-Host "Appuyez sur Entree pour quitter"
         exit 1
     }
 }
 
 function Add-ServerContent{
 
-    Write-Host("`n  [++] Installation de AD Certificate Services")
+    Write-Host("`n  [++] Installation ADCS")
     Add-WindowsFeature -Name AD-Certificate -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
-  
+
     Add-WindowsFeature -Name Adcs-Cert-Authority -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
-    
+
     Install-AdcsCertificationAuthority -CAType EnterpriseRootCa -CryptoProviderName "RSA#Microsoft Software Key Storage Provider" -KeyLength 2048 -HashAlgorithmName SHA1 -ValidityPeriod Years -ValidityPeriodUnits 99 -WarningAction SilentlyContinue -Force | Out-Null
 
     Install-WindowsFeature -Name ADCS-Web-Enrollment -IncludeManagementTools
 
     Install-AdcsWebEnrollment -Force
 
-    write-host("`n  [++] Installation de Remote System Administration Tools (RSAT)")
+    Write-Host("`n  [++] Installation RSAT")
     Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0 -WarningAction SilentlyContinue | Out-Null
     Add-WindowsFeature RSAT-ADCS,RSAT-ADCS-mgmt -WarningAction SilentlyContinue | Out-Null
     Add-WindowsFeature -Name "RSAT-AD-PowerShell" -IncludeAllSubFeature
 
-    # Groupes, OUs, utilisateurs
+    # Groups, OUs, users
     New-ADGroup -name "RH" -GroupScope Global
     New-ADGroup -name "Management" -GroupScope Global
     New-ADGroup -name "Consultants" -GroupScope Global
@@ -243,7 +241,7 @@ function Add-ServerContent{
     Add-User -prenom "Cyrille" -nom "Toutain" -sam "ctoutain" -ou "vente" -mdp "cQBzAGcANQA2ADQAUwBGADIALQAkAA=="
     Add-ADGroupMember -Identity "Vente" -Members obossuet,jplantier,jschneider,lportier,ctoutain
 
-    # Comptes IT et comptes IT admins du domaine
+    # IT accounts
     Add-User -prenom "Sylvain" -nom "Cormier" -sam "scormier" -ou "it" -mdp "egBMADAAVAAxAE4AIQA0AEEAQQBZAHIA"
     Add-User -prenom "Admin" -nom "Sylvain Cormier" -sam "adm-scormier" -ou "it" -mdp "egBMADAAVAAxAE4AIQA0AEEAQQBZAHIA"
     Add-User -prenom "Maxime" -nom "Laurens" -sam "mlaurens" -ou "it" -mdp "IQAwAE4AZQB2AGEAZwByAHUAcAAwACEA"
@@ -251,14 +249,14 @@ function Add-ServerContent{
     Add-ADGroupMember -Identity "IT" -Members scormier,mlaurens
     Add-ADGroupMember -Identity "Admins du domaine" -Members adm-scormier,adm-mlaurens
 
-    # Quelques comptes désactivés
-    New-ADUser -Name "Arnaud Trottier" -GivenName "Arnaud" -Surname "Trottier" -SamAccountName "atrottier" -Description "Désactivé le 14/06/2023" -UserPrincipalName "atrottier@nevasec.local" -Path "OU=vente,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Hello123" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
-    New-ADUser -Name "Guillaume Brazier" -GivenName "Guillaume" -Surname "Brazier" -SamAccountName "gbrazier" -Description "Désactivé le 25/08/2023" -UserPrincipalName "gbrazier@nevasec.local" -Path "OU=consultants,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Summer2024" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
+    # Disabled accounts
+    New-ADUser -Name "Arnaud Trottier" -GivenName "Arnaud" -Surname "Trottier" -SamAccountName "atrottier" -Description "Desactive le 14/06/2023" -UserPrincipalName "atrottier@nevasec.local" -Path "OU=vente,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Hello123" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
+    New-ADUser -Name "Guillaume Brazier" -GivenName "Guillaume" -Surname "Brazier" -SamAccountName "gbrazier" -Description "Desactive le 25/08/2023" -UserPrincipalName "gbrazier@nevasec.local" -Path "OU=consultants,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Summer2024" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
 
-    # Comptes de service et SPN
-    New-ADUser -Name "svc-sql" -GivenName "svc" -Surname "sql" -SamAccountName "svc-sql" -Description "Compte de service SQL" -UserPrincipalName "svc-sql@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "sql0v3-u" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount -PassThru  | Out-Null
-    New-ADUser -Name "svc-backup" -GivenName "svc" -Surname "backup" -SamAccountName "svc-backup" -Description "Compte de service backup. Mdp: B4ckup-S3rv1c3" -UserPrincipalName "svc-backup@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "B4ckup-S3rv1c3" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
-    New-ADUser -Name "svc-legacy" -GivenName "svc" -Surname "legacy" -SamAccountName "svc-legacy" -Description "Compte de service pour app legacy" -UserPrincipalName "svc-legacy@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Killthislegacy!" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount  | Out-Null
+    # Service accounts
+    New-ADUser -Name "svc-sql" -GivenName "svc" -Surname "sql" -SamAccountName "svc-sql" -Description "Service account SQL" -UserPrincipalName "svc-sql@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "sql0v3-u" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount -PassThru  | Out-Null
+    New-ADUser -Name "svc-backup" -GivenName "svc" -Surname "backup" -SamAccountName "svc-backup" -Description "Service account backup. Mdp: B4ckup-S3rv1c3" -UserPrincipalName "svc-backup@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "B4ckup-S3rv1c3" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
+    New-ADUser -Name "svc-legacy" -GivenName "svc" -Surname "legacy" -SamAccountName "svc-legacy" -Description "Service account legacy app" -UserPrincipalName "svc-legacy@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Killthislegacy!" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount  | Out-Null
     Add-ADGroupMember -Identity "Backup" -Members svc-backup
 
     setspn -A DC01/svc-sql.nevasec.local:`60111 nevasec\svc-sql > $null
@@ -271,64 +269,56 @@ function Add-ServerContent{
     mkdir C:\Share
     New-SmbShare -Name "Share" -Path "C:\Share" -ChangeAccess "Utilisateurs" -FullAccess "Tout le monde" -WarningAction SilentlyContinue | Out-Null
 
-    # For Passback attack
+    # Tools
     Invoke-WebRequest -Uri "https://github.com/WodenSec/ADLab/raw/main/LdapAdminPortable.zip" -OutFile "C:\Share\LdapAdminPortable.zip"
 
-    # Creating and configuring Custom GPO
-    Write-Host("`n  [++] Creation of Custom GPO")
+    # GPO
+    Write-Host("`n  [++] Configuration GPO")
     New-GPO -Name "CustomGPO"
 
-    # Setting registry values using the Custom GPO
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SYSTEM\CurrentControlSet\Services\FDResPub" -ValueName "DependOnService" -Type MultiString -Value "RpcSs\0http\0fpdhost\0LanmanWorkstation"  # Configures service dependencies for FDResPub
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -ValueName "sc_fdredpub" -Type MultiString -Value "sc config fdrespub depend= RpcSs/http/fdphost/LanmanWorkstation"  # Adds FDResPub service configuration to startup
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\System\CurrentControlSet\Control\Terminal Server" -ValueName "fDenyTSConnections" -Value 0 -Type Dword | Out-Null  # Enables Remote Desktop connections
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -ValueName "UserAuthentication" -Value 0 -Type Dword | Out-Null  # Enables Remote Desktop connections
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -ValueName "EnableLUA" -Value 0 -Type Dword | Out-Null  # Disables User Account Control (UAC)
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\system" -ValueName "LocalAccountTokenFilterPolicy" -Value 1 -Type Dword | Out-Null  # Allows full remote access for local accounts
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer" -ValueName "AlwaysInstallElevated" -Value 1 -Type Dword | Out-Null  # Allows elevated privileges for MSI installations
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -ValueName "NoAutoUpdate" -Value 1 -Type Dword | Out-Null  # Disables automatic Windows updates
-    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\" -ValueName "DisabledComponents" -Value 0x20 -Type Dword  # Prefer IPv4 over IPv6
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SYSTEM\CurrentControlSet\Services\FDResPub" -ValueName "DependOnService" -Type MultiString -Value "RpcSs\0http\0fpdhost\0LanmanWorkstation"
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -ValueName "sc_fdredpub" -Type MultiString -Value "sc config fdrespub depend= RpcSs/http/fdphost/LanmanWorkstation"
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\System\CurrentControlSet\Control\Terminal Server" -ValueName "fDenyTSConnections" -Value 0 -Type Dword | Out-Null
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -ValueName "UserAuthentication" -Value 0 -Type Dword | Out-Null
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -ValueName "EnableLUA" -Value 0 -Type Dword | Out-Null
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\system" -ValueName "LocalAccountTokenFilterPolicy" -Value 1 -Type Dword | Out-Null
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer" -ValueName "AlwaysInstallElevated" -Value 1 -Type Dword | Out-Null
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -ValueName "NoAutoUpdate" -Value 1 -Type Dword | Out-Null
+    Set-GPRegistryValue -Name "CustomGPO" -Key "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\" -ValueName "DisabledComponents" -Value 0x20 -Type Dword
 
     New-GPLink -Name "CustomGPO" -Target "DC=NEVASEC,DC=local" -LinkEnabled Yes -Enforced Yes
-    
-    # GPP password
+
+    # GPP
     New-Item "\\DC01\sysvol\nevasec.local\Policies\Groups.xml" -ItemType File -Value ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("PAA/AHgAbQBsACAAdgBlAHIAcwBpAG8AbgA9ACIAMQAuADAAIgAgAGUAbgBjAG8AZABpAG4AZwA9ACIAdQB0AGYALQA4ACIAIAA/AD4ADQAKADwARwByAG8AdQBwAHMAIABjAGwAcwBpAGQAPQAiAHsAZQAxADgAYgBkADMAMABiAC0AYwA3AGIAZAAtAGMAOQA5AGYALQA3ADgAYgBiAC0AMgAwADYAYgA0ADMANABkADAAYgAwADgAfQAiAD4ADQAKAAkAPABVAHMAZQByACAAYwBsAHMAaQBkAD0AIgB7AEQARgA1AEYAMQA4ADUANQAtADUAMQBFADUALQA0AGQAMgA0AC0AOABCADEAQQAtAEQAOQBCAEQARQA5ADgAQgBBADEARAAxAH0AIgAgAG4AYQBtAGUAPQAiAEEAZABtAGkAbgBpAHMAdAByAGEAdABvAHIAIAAoAGIAdQBpAGwAdAAtAGkAbgApACIAIABpAG0AYQBnAGUAPQAiADIAIgAgAGMAaABhAG4AZwBlAGQAPQAiADIAMAAxADUALQAwADIALQAxADgAIAAwADEAOgA1ADMAOgAwADEAIgAgAHUAaQBkAD0AIgB7AEQANQBGAEUANwAzADUAMgAtADgAMQBFADEALQA0ADIAQQAyAC0AQgA3AEQAQQAtADEAMQA4ADQAMAAyAEIARQA0AEMAMwAzAH0AIgA+AA0ACgAJAAkAPABQAHIAbwBwAGUAcgB0AGkAZQBzACAAYQBjAHQAaQBvAG4APQAiAFUAIgAgAG4AZQB3AE4AYQBtAGUAPQAiACIAIABmAHUAbABsAE4AYQBtAGUAPQAiACIAIABkAGUAcwBjAHIAaQBwAHQAaQBvAG4APQAiACIAIABjAHAAYQBzAHMAdwBvAHIAZAA9ACIAUgBJADEAMwAzAEIAMgBXAGwAMgBDAGkASQAwAEMAYQB1ADEARAB0AHIAdABUAGUAMwB3AGQARgB3AHoAQwBpAFcAQgA1AFAAUwBBAHgAWABNAEQAcwB0AGMAaABKAHQAMwBiAEwAMABVAGkAZQAwAEIAYQBaAC8ANwByAGQAUQBqAHUAZwBUAG8AbgBGADMAWgBXAEEASwBhADEAaQBSAHYAZAA0AEoARwBRACIAIABjAGgAYQBuAGcAZQBMAG8AZwBvAG4APQAiADAAIgAgAG4AbwBDAGgAYQBuAGcAZQA9ACIAMAAiACAAbgBlAHYAZQByAEUAeABwAGkAcgBlAHMAPQAiADAAIgAgAGEAYwBjAHQARABpAHMAYQBiAGwAZQBkAD0AIgAwACIAIABzAHUAYgBBAHUAdABoAG8AbgB0AHkAPQAiAFIASQBEAF8AQQBEAE0ASQBOACIAIAB1AHMAZQByAE4AYQBtAGUAPQAiAGkAbgBzAHQAYQBsAGwAcABjACIALwA+AA0ACgAJADwALwBVAHMAZQByAD4ADQAKADwALwBHAHIAbwB1AHAAcwA+AA==")))
 
-    # ACLs vulnérables pour le pentest lab
+    # ACLs
+    Write-Host("`n  [++] Configuration ACLs")
     Set-VulnerableACLs
 }
 
 
 function Set-VulnerableACLs {
-    Write-Host("`n  [++] Configuration des ACLs vulnérables pour le lab")
-
     Import-Module ActiveDirectory
 
-    # 1. Groupe Backup -> Droits de réplication (DCSync) sur le domaine
-    Write-Host("    - Backup -> DCSync sur le domaine")
+    # Backup group
     $BackupSID = (Get-ADGroup -Identity "Backup").SID
     $DomainDN = (Get-ADDomain).DistinguishedName
     $acl = Get-Acl "AD:$DomainDN"
-    # DS-Replication-Get-Changes
     $ace1 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($BackupSID, "ExtendedRight", "Allow", [GUID]"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2")
     $acl.AddAccessRule($ace1)
-    # DS-Replication-Get-Changes-All
     $ace2 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($BackupSID, "ExtendedRight", "Allow", [GUID]"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2")
     $acl.AddAccessRule($ace2)
     Set-Acl "AD:$DomainDN" $acl
 
-    # 2. svc-legacy -> ForceChangePassword sur svc-sql
-    Write-Host("    - svc-legacy -> ForceChangePassword sur svc-sql")
+    # svc-legacy
     $SvcLegacySID = (Get-ADUser -Identity "svc-legacy").SID
     $SvcSqlDN = (Get-ADUser -Identity "svc-sql").DistinguishedName
     $acl = Get-Acl "AD:$SvcSqlDN"
-    # User-Force-Change-Password
     $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($SvcLegacySID, "ExtendedRight", "Allow", [GUID]"00299570-246d-11d0-a768-00aa006e0529")
     $acl.AddAccessRule($ace)
     Set-Acl "AD:$SvcSqlDN" $acl
 
-    # 3. svc-sql -> GenericAll sur svc-backup
-    Write-Host("    - svc-sql -> GenericAll sur svc-backup")
+    # svc-sql
     $SvcSqlSID = (Get-ADUser -Identity "svc-sql").SID
     $SvcBackupDN = (Get-ADUser -Identity "svc-backup").DistinguishedName
     $acl = Get-Acl "AD:$SvcBackupDN"
@@ -336,8 +326,7 @@ function Set-VulnerableACLs {
     $acl.AddAccessRule($ace)
     Set-Acl "AD:$SvcBackupDN" $acl
 
-    # 4. Groupe IT -> GenericWrite sur le groupe Administrateurs
-    Write-Host("    - IT -> GenericWrite sur groupe Administrateurs")
+    # IT group
     $ITGroupSID = (Get-ADGroup -Identity "IT").SID
     $AdminGroupDN = (Get-ADGroup -Identity "Administrateurs").DistinguishedName
     $acl = Get-Acl "AD:$AdminGroupDN"
@@ -348,20 +337,20 @@ function Set-VulnerableACLs {
 
 function Invoke-LabSetup{
     if ($env:COMPUTERNAME -ne $Config.HostName) {
-        Write-Host "`n[ETAPE 1/3] Première exécution détectée" -ForegroundColor Cyan
-        Write-Host "Changement des paramètres réseau..." -ForegroundColor Yellow
+        Write-Host "`n[ETAPE 1/3] Premiere execution detectee" -ForegroundColor Cyan
+        Write-Host "Configuration reseau..." -ForegroundColor Yellow
         Set-IPAddress
-        Write-Host "Suppression de l'antivirus..." -ForegroundColor Yellow
+        Write-Host "Configuration securite..." -ForegroundColor Yellow
         Nuke-Defender
-        Write-Host "Améliorations QoL..." -ForegroundColor Yellow
+        Write-Host "Configuration systeme..." -ForegroundColor Yellow
         Get-QoL
-        Write-Host "`nLe serveur va être renommé en $($Config.HostName) puis redémarrer" -ForegroundColor Green
+        Write-Host "`nRedemarrage en cours..." -ForegroundColor Green
         Start-Sleep -Seconds 5
         Rename-Computer -NewName $Config.HostName -Restart
     }
     elseif ($env:USERDNSDOMAIN -ne $Config.DomainFQDN) {
-        Write-Host "`n[ETAPE 2/3] Deuxième exécution détectée" -ForegroundColor Cyan
-        Write-Host "Installation des rôles Active Directory..." -ForegroundColor Yellow
+        Write-Host "`n[ETAPE 2/3] Deuxieme execution detectee" -ForegroundColor Cyan
+        Write-Host "Installation Active Directory..." -ForegroundColor Yellow
         Build-Server
     }
     elseif ($env:COMPUTERNAME -eq $Config.HostName -and $env:USERDNSDOMAIN -eq $Config.DomainFQDN) {
@@ -369,32 +358,28 @@ function Invoke-LabSetup{
         try {
             $user = Get-ADUser -Identity "svc-sql" -ErrorAction Stop
             $exists = $true
-            Write-Host "`n[INFO] Le lab est déjà configuré !" -ForegroundColor Green
+            Write-Host "`n[INFO] Lab deja configure !" -ForegroundColor Green
         }
         catch {
             $exists = $false
         }
 
         if (-not $exists) {
-            Write-Host "`n[ETAPE 3/3] Troisième exécution détectée" -ForegroundColor Cyan
-            Write-Host "Ajout du contenu AD (utilisateurs, groupes, GPO, etc.)..." -ForegroundColor Yellow
+            Write-Host "`n[ETAPE 3/3] Troisieme execution detectee" -ForegroundColor Cyan
+            Write-Host "Configuration du contenu AD..." -ForegroundColor Yellow
             try {
                 Add-ServerContent
-                Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminée !" -ForegroundColor Green
-                Write-Host "`nN'oubliez pas les étapes manuelles:" -ForegroundColor Yellow
-                Write-Host "  1. Créer le template de certificat VPNCert" -ForegroundColor Yellow
-                Write-Host "  2. Exécuter sur DC01 après config de SRV01:" -ForegroundColor Yellow
+                Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminee !" -ForegroundColor Green
+                Write-Host "`nEtapes manuelles:" -ForegroundColor Yellow
+                Write-Host "  1. Creer le template de certificat VPNCert" -ForegroundColor Yellow
+                Write-Host "  2. Executer sur DC01 apres config de SRV01:" -ForegroundColor Yellow
                 Write-Host "     Get-ADComputer -Identity SRV01 | Set-ADAccountControl -TrustedForDelegation `$true" -ForegroundColor Yellow
             }
             catch {
-                Write-Error "Erreur lors de l'ajout du contenu: $($_.Exception.Message)"
-                Read-Host "Appuyez sur Entrée pour quitter"
+                Write-Error "Erreur: $($_.Exception.Message)"
+                Read-Host "Appuyez sur Entree pour quitter"
                 exit 1
             }
         }
     }
 }
-
-
-
-
