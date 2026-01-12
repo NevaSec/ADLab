@@ -270,7 +270,7 @@ function Add-ServerContent{
     New-SmbShare -Name "Share" -Path "C:\Share" -ChangeAccess "Utilisateurs" -FullAccess "Tout le monde" -WarningAction SilentlyContinue | Out-Null
 
     # Tools
-    Invoke-WebRequest -Uri "https://github.com/WodenSec/ADLab/raw/main/LdapAdminPortable.zip" -OutFile "C:\Share\LdapAdminPortable.zip"
+    Invoke-WebRequest -Uri "https://github.com/NevaSec/ADLab/raw/main/LdapAdminPortable.zip" -OutFile "C:\Share\LdapAdminPortable.zip"
 
     # GPO
     Write-Host("`n  [++] Configuration GPO")
