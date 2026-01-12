@@ -297,54 +297,57 @@ function Add-ServerContent{
 
     # Certificate template
     Write-Host("`n  [++] Configuration ADCS template")
-    New-VulnerableCertTemplate -DisplayName "VPNCert" -SourceTemplate "User"
+    New-VulnerableCertTemplate -DisplayName "VPNCert" -SourceTemplateCN "User"
 }
 
 
 function New-VulnerableCertTemplate {
     param(
         [string]$DisplayName = "VPNCert",
-        [string]$SourceTemplate = "User"
+        [string]$SourceTemplateCN = "User"
     )
 
     $ConfigNC = (Get-ADRootDSE).configurationNamingContext
     $TemplatePath = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$ConfigNC"
 
-    # Get source template
-    $Source = Get-ADObject -SearchBase $TemplatePath -Filter "displayName -eq '$SourceTemplate'" -Properties *
+    # Get source template by CN (CN is always in English)
+    $Source = Get-ADObject -SearchBase $TemplatePath -Filter "cn -eq '$SourceTemplateCN'" -Properties *
 
     if (-not $Source) {
-        Write-Host "    Source template not found, trying CN..." -ForegroundColor Yellow
-        $Source = Get-ADObject -SearchBase $TemplatePath -Filter "cn -eq '$SourceTemplate'" -Properties *
-    }
-
-    if (-not $Source) {
-        Write-Host "    Template source introuvable" -ForegroundColor Red
+        Write-Host "    Template source introuvable: $SourceTemplateCN" -ForegroundColor Red
         return
     }
 
-    # Generate unique OID
+    # Generate unique OID for the new template
     $OIDPath = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
-    $OIDContainer = Get-ADObject -Identity $OIDPath -Properties msPKI-Cert-Template-OID
-    $ForestOID = ($OIDContainer.'msPKI-Cert-Template-OID') -replace '^(.+)\.\d+\.\d+$', '$1'
-    $Hex = [System.Guid]::NewGuid().ToString().Replace("-","")
-    $Part1 = [System.Convert]::ToInt64($Hex.Substring(0,16), 16)
-    $Part2 = [System.Convert]::ToInt64($Hex.Substring(16,16), 16)
+    $ExistingOIDs = Get-ADObject -SearchBase $OIDPath -Filter "objectClass -eq 'msPKI-Enterprise-Oid'" -Properties msPKI-Cert-Template-OID | Select-Object -First 1
+    if ($ExistingOIDs) {
+        $ForestOID = ($ExistingOIDs.'msPKI-Cert-Template-OID') -replace '\.\d+\.\d+$', ''
+    } else {
+        $ForestOID = "1.3.6.1.4.1.311.21.8"
+    }
+    $Part1 = Get-Random -Minimum 10000000 -Maximum 99999999
+    $Part2 = Get-Random -Minimum 10000000 -Maximum 99999999
     $NewOID = "$ForestOID.$Part1.$Part2"
-    $OIDName = $DisplayName.Replace(' ','') + "-" + [System.Guid]::NewGuid().ToString().Substring(0,8)
+    $OIDName = $DisplayName.Replace(' ','') + "-" + (Get-Random -Minimum 10000 -Maximum 99999)
 
-    # Create OID object
+    # Create OID object for the new template
     New-ADObject -Path $OIDPath -Name $OIDName -Type "msPKI-Enterprise-Oid" -OtherAttributes @{
         'displayName' = $DisplayName
         'flags' = [System.Int32]1
         'msPKI-Cert-Template-OID' = $NewOID
     }
 
+    # Binary attributes - 1 year validity, 6 weeks overlap
+    $pKIExpirationPeriod = [byte[]](0x00, 0x80, 0x1A, 0x06, 0x00, 0x00, 0x00, 0x00)
+    $pKIOverlapPeriod = [byte[]](0x00, 0x80, 0xA6, 0x0A, 0x02, 0x00, 0x00, 0x00)
+    $pKIKeyUsage = [byte[]](0xA0, 0x00)
+
     # Prepare attributes for new template
     $TemplateAttrs = @{
         'displayName' = $DisplayName
         'msPKI-Cert-Template-OID' = $NewOID
-        'flags' = [System.Int32]$Source.flags
+        'flags' = [System.Int32]131649
         'revision' = [System.Int32]100
         'msPKI-Template-Schema-Version' = [System.Int32]2
         'msPKI-Template-Minor-Revision' = [System.Int32]1
@@ -354,32 +357,30 @@ function New-VulnerableCertTemplate {
         'msPKI-Enrollment-Flag' = [System.Int32]0
         'msPKI-Private-Key-Flag' = [System.Int32]16842752
         'msPKI-Minimal-Key-Size' = [System.Int32]2048
-        # ESC1: CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT
         'msPKI-Certificate-Name-Flag' = [System.Int32]1
-        # Client Authentication EKU
         'pKIExtendedKeyUsage' = @('1.3.6.1.5.5.7.3.2')
         'msPKI-Certificate-Application-Policy' = @('1.3.6.1.5.5.7.3.2')
         'pKICriticalExtensions' = @('2.5.29.15')
         'pKIDefaultCSPs' = @('1,Microsoft RSA SChannel Cryptographic Provider')
+        'pKIExpirationPeriod' = $pKIExpirationPeriod
+        'pKIOverlapPeriod' = $pKIOverlapPeriod
+        'pKIKeyUsage' = $pKIKeyUsage
     }
 
-    # Copy binary attributes from source
-    if ($Source.pKIExpirationPeriod) {
-        $TemplateAttrs['pKIExpirationPeriod'] = [System.Byte[]]$Source.pKIExpirationPeriod
-    }
-    if ($Source.pKIOverlapPeriod) {
-        $TemplateAttrs['pKIOverlapPeriod'] = [System.Byte[]]$Source.pKIOverlapPeriod
-    }
-    if ($Source.pKIKeyUsage) {
-        $TemplateAttrs['pKIKeyUsage'] = [System.Byte[]]$Source.pKIKeyUsage
-    }
-
-    # Create new template
+    # Create new template (no -DisplayName parameter, it's in OtherAttributes)
     $TemplateCN = $DisplayName.Replace(' ','')
-    New-ADObject -Path $TemplatePath -Name $TemplateCN -DisplayName $DisplayName -Type pKICertificateTemplate -OtherAttributes $TemplateAttrs
+    New-ADObject -Path $TemplatePath -Name $TemplateCN -Type pKICertificateTemplate -OtherAttributes $TemplateAttrs
+
+    # Wait for replication
+    Start-Sleep -Seconds 2
 
     # Set permissions - Allow Domain Users to Enroll
     $TemplateObj = Get-ADObject -SearchBase $TemplatePath -Filter "cn -eq '$TemplateCN'"
+    if (-not $TemplateObj) {
+        Write-Host "    Erreur: template non cree" -ForegroundColor Red
+        return
+    }
+
     $DomainUsersSID = (Get-ADGroup -Identity "Utilisateurs du domaine").SID
     $acl = Get-Acl "AD:$($TemplateObj.DistinguishedName)"
 
