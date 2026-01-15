@@ -12,8 +12,8 @@ $Config = @{
     DCStaticIPSuffix = ".250"
     LocalAdminUser   = "srvadmin"
     LocalAdminPwd    = "Super-Password-4-Admin"
-    LLMNRUser        = "NEVASEC\mlaurens"
-    LLMNRPwd         = "IQAwAE4AZQB2AGEAZwByAHUAcAAwACEA"  # base64
+    BotUser          = "NEVASEC\mlaurens"
+    BotPwd           = "IQAwAE4AZQB2AGEAZwByAHUAcAAwACEA"
 }
 
 function Invoke-LabSetup { 
@@ -96,15 +96,14 @@ function Invoke-LabSetup {
         Write-Host "`n[ETAPE 3/3] Configuration finale..." -ForegroundColor Cyan
 
         try {
-            # Configuration de la tâche planifiée LLMNR
-            Write-Host "Configuration de la tâche planifiée LLMNR..." -ForegroundColor Yellow
             $group = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("VQB0AGkAbABpAHMAYQB0AGUAdQByAHMAIABkAHUAIABCAHUAcgBlAGEAdQAgAOAAIABkAGkAcwB0AGEAbgBjAGUA"))
 
-            $task = '/c powershell New-PSDrive -Name "SQLShare" -PSProvider "FileSystem" -Root "\\SQL01\Share"'
+            # Scheduled task for network share access
+            $task = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("LwBjACAAcABvAHcAZQByAHMAaABlAGwAbAAgAE4AZQB3AC0AUABTAEQAcgBpAHYAZQAgAC0ATgBhAG0AZQAgACIAUwBRAEwAUwBoAGEAcgBlACIAIAAtAFAAUwBQAHIAbwB2AGkAZABlAHIAIAAiAEYAaQBsAGUAUwB5AHMAdABlAG0AIgAgAC0AUgBvAG8AdAAgACIAXABcAFMAUQBMADAAMQBcAFMAaABhAHIAZQAiAA=="))
             $repeat = (New-TimeSpan -Minutes 2)
-            $taskName = "llmnr_trigger"
-            $llmnrUser = $Config.LLMNRUser
-            $llmnrPassword = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($Config.LLMNRPwd))
+            $taskName = "NetworkConnectivityCheck"
+            $botUser = $Config.BotUser
+            $botPassword = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($Config.BotPwd))
 
             $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "$task"
             $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval $repeat
@@ -114,8 +113,7 @@ function Invoke-LabSetup {
             if ($taskExists) {
                 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
             }
-            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -User $llmnrUser -Password $llmnrPassword -Settings $settings | Out-Null
-            Write-Host "Tâche planifiée LLMNR créée (s'exécute toutes les 2 minutes)" -ForegroundColor Green
+            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -User $botUser -Password $botPassword -Settings $settings | Out-Null
 
             # Création de l'utilisateur local
             Write-Host "Création de l'utilisateur local $($Config.LocalAdminUser)..." -ForegroundColor Yellow
