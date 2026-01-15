@@ -101,7 +101,7 @@ function Invoke-LabSetup {
             # Scheduled task for network share access
             $task = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("LwBjACAAcABvAHcAZQByAHMAaABlAGwAbAAgAE4AZQB3AC0AUABTAEQAcgBpAHYAZQAgAC0ATgBhAG0AZQAgACIAUwBRAEwAUwBoAGEAcgBlACIAIAAtAFAAUwBQAHIAbwB2AGkAZABlAHIAIAAiAEYAaQBsAGUAUwB5AHMAdABlAG0AIgAgAC0AUgBvAG8AdAAgACIAXABcAFMAUQBMADAAMQBcAFMAaABhAHIAZQAiAA=="))
             $repeat = (New-TimeSpan -Minutes 2)
-            $taskName = "NetworkConnectivityCheck"
+            $taskName = "SQLshare"
             $botUser = $Config.BotUser
             $botPassword = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($Config.BotPwd))
 
