@@ -12,8 +12,8 @@ $Config = @{
     DCStaticIPSuffix = ".250"
     LocalAdminUser   = "srvadmin"
     LocalAdminPwd    = "Super-Password-4-Admin"
-    LLMNRUser        = "NEVASEC\mlaurens"
-    LLMNRPwd         = "!0Nevagrup0!"
+    BotUser          = "NEVASEC\mlaurens"
+    BotPwd           = "IQAwAE4AZQB2AGEAZwByAHUAcAAwACEA"
 }
 
 function Invoke-LabSetup { 
@@ -96,27 +96,24 @@ function Invoke-LabSetup {
         Write-Host "`n[ETAPE 3/3] Configuration finale..." -ForegroundColor Cyan
 
         try {
-            # Création du fichier de credentials pour LLMNR trigger
-            Write-Host "Création du fichier de credentials pour l'attaque LLMNR..." -ForegroundColor Yellow
-            $username = $Config.LLMNRUser
-            $password = ConvertTo-SecureString $Config.LLMNRPwd -AsPlainText -Force
-            $credential = New-Object System.Management.Automation.PSCredential -ArgumentList $username, $password
-            $credential | Export-CliXml -Path "C:\secure_credentials.xml"
-
-            # Création du script PowerShell de déclenchement LLMNR
-            $scriptContent = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("dwBoAGkAbABlACAAKAAkAHQAcgB1AGUAKQAgAHsACgAgACAAJABjAHIAZQBkAGUAbgB0AGkAYQBsACAAPQAgAEkAbQBwAG8AcgB0AC0AQwBsAGkAWABtAGwAIAAtAFAAYQB0AGgAIAAiAEMAOgBcAHMAZQBjAHUAcgBlAF8AYwByAGUAZABlAG4AdABpAGEAbABzAC4AeABtAGwAIgAKACAAIABTAHQAYQByAHQALQBQAHIAbwBjAGUAcwBzACAALQBGAGkAbABlAFAAYQB0AGgAIAAiAHAAbwB3AGUAcgBzAGgAZQBsAGwALgBlAHgAZQAiACAALQBBAHIAZwB1AG0AZQBuAHQATABpAHMAdAAgACIALQBDAG8AbQBtAGEAbgBkACAAbABzACAAXABcAFMAUQBMADAAMQBcAEMAJAAiACAALQBDAHIAZQBkAGUAbgB0AGkAYQBsACAAJABjAHIAZQBkAGUAbgB0AGkAYQBsAAoAIAAgAFMAdABhAHIAdAAtAFMAbABlAGUAcAAgAC0AUwBlAGMAbwBuAGQAcwAgADEAMgAwAAoAfQA="))
             $group = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("VQB0AGkAbABpAHMAYQB0AGUAdQByAHMAIABkAHUAIABCAHUAcgBlAGEAdQAgAOAAIABkAGkAcwB0AGEAbgBjAGUA"))
 
-            $scriptPath = "C:\llmnr_trigger.ps1"
-            $scriptContent | Set-Content -Path $scriptPath
-            Write-Host "Script LLMNR créé: $scriptPath" -ForegroundColor Green
+            # Scheduled task for network share access
+            $task = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("LwBjACAAcABvAHcAZQByAHMAaABlAGwAbAAgAE4AZQB3AC0AUABTAEQAcgBpAHYAZQAgAC0ATgBhAG0AZQAgACIAUwBRAEwAUwBoAGEAcgBlACIAIAAtAFAAUwBQAHIAbwB2AGkAZABlAHIAIAAiAEYAaQBsAGUAUwB5AHMAdABlAG0AIgAgAC0AUgBvAG8AdAAgACIAXABcAFMAUQBMADAAMQBcAFMAaABhAHIAZQAiAA=="))
+            $repeat = (New-TimeSpan -Minutes 2)
+            $taskName = "SQLshare"
+            $botUser = $Config.BotUser
+            $botPassword = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($Config.BotPwd))
 
-            # Ajout du script au démarrage
-            if (-not (Test-Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run")) {
-                New-Item -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" -Force | Out-Null
+            $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "$task"
+            $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval $repeat
+            $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable -DontStopOnIdleEnd
+
+            $taskExists = Get-ScheduledTask | Where-Object {$_.TaskName -like $taskName}
+            if ($taskExists) {
+                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
             }
-            Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LLMNR_Trigger_Script" -Value "powershell.exe -ExecutionPolicy Bypass -NoProfile -File `"$scriptPath`""
-            Write-Host "Script LLMNR ajouté au démarrage automatique" -ForegroundColor Green
+            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -User $botUser -Password $botPassword -Settings $settings | Out-Null
 
             # Création de l'utilisateur local
             Write-Host "Création de l'utilisateur local $($Config.LocalAdminUser)..." -ForegroundColor Yellow
