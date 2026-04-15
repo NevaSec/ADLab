@@ -477,9 +477,6 @@ function Invoke-LabSetup {
             try {
                 Add-ServerContent
                 Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminee !" -ForegroundColor Green
-                Write-Host "`nEtape manuelle:" -ForegroundColor Yellow
-                Write-Host "  Executer sur DC apres config de SRV01:" -ForegroundColor Yellow
-                Write-Host "  Get-ADComputer -Identity SRV01 | Set-ADAccountControl -TrustedForDelegation `$true" -ForegroundColor Yellow
             }
             catch {
                 Write-Error "Erreur: $($_.Exception.Message)"
