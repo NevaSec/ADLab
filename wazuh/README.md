@@ -80,7 +80,7 @@ sudo nano /etc/default/keyboard   # changer XKBLAYOUT="us" en XKBLAYOUT="fr"
 6. Mettre à jour et installer les outils :
 ```bash
 sudo apt update
-sudo apt install -y kali-root-login bloodhound-python bloodhound
+sudo apt install -y kali-root-login bloodhound-ce-python bloodhound
 ```
 7. Définir un mot de passe root :
 ```bash
