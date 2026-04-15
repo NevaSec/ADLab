@@ -37,6 +37,7 @@ Le DC prend l'IP fixe `.200` (assignée par le script).
 2. Importer l'OVA dans l'hyperviseur
    - VirtualBox : `File` > `Import Appliance`
    - VMware : `File` > `Open`
+   - Agrandir la taille du disque à 40GB
 3. Avant de démarrer, vérifier le réseau : NAT Network (VirtualBox) ou VMNet8 (VMware)
 4. **VirtualBox uniquement** : dans les paramètres d'affichage, passer le contrôleur graphique sur `VMSVGA`
 5. Démarrer la VM. Identifiants : `wazuh-user` / `wazuh`
