@@ -39,9 +39,10 @@ Le DC prend l'IP fixe `.200` (assignée par le script).
    - VMware : `File` > `Open`
    - Agrandir la taille du disque à 40GB
 3. Avant de démarrer, vérifier le réseau : NAT Network (VirtualBox) ou VMNet8 (VMware)
-4. **VirtualBox uniquement** : dans les paramètres d'affichage, passer le contrôleur graphique sur `VMSVGA`
-5. Démarrer la VM. Identifiants : `wazuh-user` / `wazuh`
-6. Noter l'adresse IP `ip a`
+4. **VMWare uniquement** : Cliquer sur "Mettre à niveau cette machine virtuelle" avant de l'allumer puis "Modifier cette machine virtuelle".
+5. **VirtualBox uniquement** : dans les paramètres d'affichage, passer le contrôleur graphique sur `VMSVGA`
+6. Démarrer la VM. Identifiants : `wazuh-user` / `wazuh`
+7. Noter l'adresse IP `ip a`
 
 Ressources nécessaires : **4 vCPU, 8 GB RAM, 50 GB disque**.
 
