@@ -9,7 +9,7 @@ $Config = @{
     DomainNetBIOS    = "NEVASEC"
     SafeModeAdminPwd = "R00tR00t"
     HostName         = "DC"
-    StaticIPSuffix   = ".200"
+    StaticIPSuffix   = ".220"
     DomainMode       = "WinThreshold"
     ForestMode       = "WinThreshold"
 }
