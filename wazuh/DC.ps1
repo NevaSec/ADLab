@@ -264,7 +264,7 @@ function Add-ServerContent {
 
     # Service accounts
     New-ADUser -Name "svc-sql" -GivenName "svc" -Surname "sql" -SamAccountName "svc-sql" -Description "Service account SQL" -UserPrincipalName "svc-sql@nevasec.lab" -Path "OU=SVC,DC=nevasec,DC=lab" -AccountPassword (ConvertTo-SecureString "sql0v3-u" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount -PassThru  | Out-Null
-    New-ADUser -Name "svc-backup" -GivenName "svc" -Surname "backup" -SamAccountName "svc-backup" -Description "Service account backup. Mdp: B4ckup-S3rv1c3" -UserPrincipalName "svc-backup@nevasec.lab" -Path "OU=SVC,DC=nevasec,DC=lab" -AccountPassword (ConvertTo-SecureString "B4ckup-S3rv1c3" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
+    New-ADUser -Name "svc-backup" -GivenName "svc" -Surname "backup" -SamAccountName "svc-backup" -Description "Service account backup." -UserPrincipalName "svc-backup@nevasec.lab" -Path "OU=SVC,DC=nevasec,DC=lab" -AccountPassword (ConvertTo-SecureString "B4ckup-S3rv1c3" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
     New-ADUser -Name "svc-legacy" -GivenName "svc" -Surname "legacy" -SamAccountName "svc-legacy" -Description "Service account legacy app" -UserPrincipalName "svc-legacy@nevasec.lab" -Path "OU=SVC,DC=nevasec,DC=lab" -AccountPassword (ConvertTo-SecureString "Killthislegacy!" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount  | Out-Null
     Add-ADGroupMember -Identity "Backup" -Members svc-backup
 
