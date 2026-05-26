@@ -101,26 +101,6 @@ function Nuke-Defender {
     Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled True | Out-Null
     New-NetFirewallRule -DisplayName "Wazuh Agent" -Direction Outbound -Protocol TCP -RemotePort 1514 -Action Allow -Profile Any | Out-Null
     New-NetFirewallRule -DisplayName "Wazuh Enrollment" -Direction Outbound -Protocol TCP -RemotePort 1515 -Action Allow -Profile Any | Out-Null
-
-    # Uninstall security updates (via wusa, seul moyen fiable)
-    $SecurityKBs = Get-HotFix | Where-Object { $_.Description -eq 'Security Update' }
-    if ($SecurityKBs) {
-        Write-Host "Desinstallation de $($SecurityKBs.Count) KB de securite..." -ForegroundColor Yellow
-        foreach ($kb in $SecurityKBs) {
-            $kbId = $kb.HotFixID.Replace('KB','')
-            Write-Host "  Desinstallation $($kb.HotFixID)..." -ForegroundColor Gray
-            $proc = Start-Process -FilePath "wusa.exe" -ArgumentList "/uninstall /kb:$kbId /quiet /norestart" -Wait -PassThru
-            if ($proc.ExitCode -eq 0) {
-                Write-Host "    OK" -ForegroundColor Green
-            } elseif ($proc.ExitCode -eq 3010) {
-                Write-Host "    OK (redemarrage necessaire)" -ForegroundColor Yellow
-            } else {
-                Write-Host "    Echec (code: $($proc.ExitCode))" -ForegroundColor Red
-            }
-        }
-    } else {
-        Write-Host "Aucune KB de securite trouvee." -ForegroundColor Gray
-    }
 }
 
 function Get-QoL {
