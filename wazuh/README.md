@@ -41,8 +41,6 @@ Le DC prend l'IP fixe `.220` (assignée par le script).
 3. Avant de démarrer, vérifier le réseau : NAT Network (VirtualBox) ou VMNet8 (VMware)
 4. **VMWare uniquement** : Cliquer sur "Mettre à niveau cette machine virtuelle" avant de l'allumer puis "Modifier cette machine virtuelle".
 5. **VirtualBox uniquement** : dans les paramètres d'affichage, passer le contrôleur graphique sur `VMSVGA`
-6. Démarrer la VM. Identifiants : `wazuh-user` / `wazuh`
-7. Noter l'adresse IP `ip a`
 
 Ressources minimums : **3 vCPU, 6 GB RAM, 40 GB disque**.
 
