@@ -44,7 +44,7 @@ Le DC prend l'IP fixe `.220` (assignée par le script).
 6. Démarrer la VM. Identifiants : `wazuh-user` / `wazuh`
 7. Noter l'adresse IP `ip a`
 
-Ressources nécessaires : **4 vCPU, 8 GB RAM, 50 GB disque**.
+Ressources minimums : **3 vCPU, 6 GB RAM, 40 GB disque**.
 
 ---
 
@@ -65,6 +65,8 @@ powershell -ep bypass
 ```
 8. Le script redémarre le serveur automatiquement. Répéter l'étape 7.
 9. Au second redémarrage, se connecter avec `NEVASEC\Administrateur` (`R00tR00t`) et relancer le script une dernière fois (étapes 7).
+
+Ressources minimums : **1 vCPU, 2 GB RAM, 25 GB disque**.
 
 ---
 
@@ -91,6 +93,7 @@ sudo passwd root
 8. Redémarrer et se connecter en `root`
 9. Vérifier que tout est ok puis faire un snapshot
 
+Ressources minimums : **1 vCPU, 2 GB RAM, 30 GB disque**.
 ---
 
 ### Récapitulatif des identifiants
