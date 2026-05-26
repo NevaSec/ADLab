@@ -94,6 +94,7 @@ sudo passwd root
 9. Vérifier que tout est ok puis faire un snapshot
 
 Ressources minimums : **1 vCPU, 2 GB RAM, 30 GB disque**.
+
 ---
 
 ### Récapitulatif des identifiants
