@@ -9,7 +9,7 @@
 
 Le lab est constitué de 3 machines.
 
-- **DC** : contrôleur de domaine Windows Server 2022, domaine `NEVASEC.LAB`, IP fixe `.200`, agent Wazuh installé
+- **DC** : contrôleur de domaine Windows Server 2022, domaine `NEVASEC.LAB`, IP fixe `.220`, agent Wazuh installé
 - **Wazuh VM** : Linux (Amazon Linux 2023), Wazuh all-in-one (manager + indexer + dashboard)
 - **Kali Linux** : plateforme d'attaque
 
@@ -27,7 +27,7 @@ Toutes les VM doivent être sur le même réseau NAT.
 - **VMware** : Custom (VMNet8)
   - Assigner `VMnet8` à chaque VM dans ses paramètres réseau
 
-Le DC prend l'IP fixe `.200` (assignée par le script).
+Le DC prend l'IP fixe `.220` (assignée par le script).
 
 ---
 
@@ -108,5 +108,5 @@ sudo passwd root
 
 ### Vérifications finales
 
-- [ ] Kali peut pinguer le DC (`.200`) et l'IP Wazuh
+- [ ] Kali peut pinguer le DC (`.220`) et l'IP Wazuh
 - [ ] Snapshot de chaque VM fait
