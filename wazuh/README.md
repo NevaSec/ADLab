@@ -56,9 +56,12 @@ Ressources minimums : **3 vCPU, 6 GB RAM, 40 GB disque**.
 4. Choisir l'installation personnalisée, sélectionner le disque, laisser Windows s'installer et redémarrer
 5. Mot de passe Administrateur local : `R00tR00t`
 6. Installer les VM Tools / Guest Additions, redémarrer
-7. Ouvrir PowerShell en admin :
+7. Ouvrir PowerShell en admin et coller les deux commandes séparement :
 ```powershell
 powershell -ep bypass
+```
+
+```powershell
 (iwr -useb "https://raw.githubusercontent.com/NevaSec/ADLab/main/wazuh/DC.ps1") | iex; Invoke-LabSetup
 ```
 8. Le script redémarre le serveur automatiquement. Répéter l'étape 7.
