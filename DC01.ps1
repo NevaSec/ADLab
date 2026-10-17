@@ -1,8 +1,5 @@
 #Requires -RunAsAdministrator
 
-# ============================================
-# Configuration centralisee
-# ============================================
 $Config = @{
     DomainName       = "NEVASEC"
     DomainFQDN       = "NEVASEC.LOCAL"
@@ -14,15 +11,18 @@ $Config = @{
     ForestMode       = "WinThreshold"
 }
 
+function ConvertFrom-B64 {
+    param([string]$s)
+    [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($s))
+}
+
 function Set-IPAddress {
     try {
-        # Get info: adapter, IP, gateway
         $NetAdapter = Get-CimInstance -Class Win32_NetworkAdapter -Property NetConnectionID,NetConnectionStatus | Where-Object { $_.NetConnectionStatus -eq 2 } | Select-Object -Property NetConnectionID -ExpandProperty NetConnectionID
         $IPAddress = Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias $NetAdapter | Select-Object -ExpandProperty IPAddress
         $Gateway = ((Get-NetIPConfiguration -InterfaceAlias $NetAdapter).IPv4DefaultGateway).NextHop
         $IPByte = $IPAddress.Split(".")
 
-        # Check IP and set static
         if ($IPByte[0] -eq "169" -And $IPByte[1] -eq "254") {
             Write-Host "`n[ERREUR] $IPAddress est une adresse Link-Local, parametres reseau de la VM a verifier.`n" -ForegroundColor Red
             Read-Host "Appuyez sur Entree pour quitter"
@@ -85,9 +85,8 @@ function Nuke-Defender{
     schtasks /Change /TN "Microsoft\Windows\Windows Defender\Windows Defender Scheduled Scan" /Disable > $null
     schtasks /Change /TN "Microsoft\Windows\Windows Defender\Windows Defender Verification" /Disable > $null
     reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "LocalAccountTokenFilterPolicy" /t REG_DWORD /d "1" /f > $null
-    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v sc_fdrespub /t REG_EXPAND_SZ /d "sc config fdrespub depend= RpcSs/http/fdphost/LanmanWorkstation"  # Sets FDResPub service dependency at system startup
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /f /v sc_fdrespub /t REG_EXPAND_SZ /d "sc config fdrespub depend= RpcSs/http/fdphost/LanmanWorkstation"
 
-    # Disable Windows Update
     Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
     Set-Service wuauserv -StartupType Disabled
     Stop-Service bits -Force -ErrorAction SilentlyContinue
@@ -99,21 +98,7 @@ function Nuke-Defender{
     New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name NoAutoUpdate -Value 1
 
-    # Disable Firewall
     Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled False | Out-Null
-
-    # Uninstall updates
-    Get-WindowsPackage -Online |
-        Where-Object { $_.ReleaseType -eq 'SecurityUpdate' -and $_.PackageState -eq 'Installed' } |
-        ForEach-Object {
-            try {
-                Remove-WindowsPackage -Online -PackageName $_.PackageName -ErrorAction Stop > $null 2>&1
-            } catch {
-                # Silently ignored
-            }
-        }
-
-
 }
 
 function Get-QoL{
@@ -132,12 +117,12 @@ function Add-User{
         [Parameter()][string]$prenom,
         [Parameter()][string]$nom,
         [Parameter()][string]$sam,
-        [Parameter()][string]$ou,
+        [Parameter()][string]$Path,
         [Parameter()][string]$mdp
     )
 
-    $mdp = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($mdp))
-    New-ADUser -Name "$prenom $nom" -GivenName "$prenom" -Surname "$nom" -SamAccountName "$sam" -UserPrincipalName "$sam@nevasec.local" -Path "OU=$ou,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString $mdp -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount  | Out-Null
+    $mdp = ConvertFrom-B64 $mdp
+    New-ADUser -Name "$prenom $nom" -GivenName "$prenom" -Surname "$nom" -SamAccountName "$sam" -UserPrincipalName "$sam@nevasec.local" -Path $Path -AccountPassword (ConvertTo-SecureString $mdp -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount  | Out-Null
 }
 
 function Build-Server{
@@ -173,12 +158,17 @@ function Build-Server{
 
 function Add-ServerContent{
 
+    if (Get-ADUser -Filter "SamAccountName -eq 'svc-sql'" -ErrorAction SilentlyContinue) {
+        Write-Host "`n[INFO] Comptes du lab deja presents : configuration AD deja effectuee, rien a faire." -ForegroundColor Green
+        return
+    }
+
     Write-Host("`n  [++] Installation ADCS")
     Add-WindowsFeature -Name AD-Certificate -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
 
     Add-WindowsFeature -Name Adcs-Cert-Authority -IncludeManagementTools -WarningAction SilentlyContinue | Out-Null
 
-    Install-AdcsCertificationAuthority -CAType EnterpriseRootCa -CryptoProviderName "RSA#Microsoft Software Key Storage Provider" -KeyLength 2048 -HashAlgorithmName SHA1 -ValidityPeriod Years -ValidityPeriodUnits 99 -WarningAction SilentlyContinue -Force | Out-Null
+    Install-AdcsCertificationAuthority -CAType EnterpriseRootCa -CryptoProviderName "RSA#Microsoft Software Key Storage Provider" -KeyLength 2048 -HashAlgorithmName SHA256 -ValidityPeriod Years -ValidityPeriodUnits 99 -WarningAction SilentlyContinue -Force | Out-Null
 
     Install-WindowsFeature -Name ADCS-Web-Enrollment -IncludeManagementTools
 
@@ -189,90 +179,118 @@ function Add-ServerContent{
     Add-WindowsFeature RSAT-ADCS,RSAT-ADCS-mgmt -WarningAction SilentlyContinue | Out-Null
     Add-WindowsFeature -Name "RSAT-AD-PowerShell" -IncludeAllSubFeature
 
-    # Groups, OUs, users
-    New-ADGroup -name "RH" -GroupScope Global
-    New-ADGroup -name "Management" -GroupScope Global
-    New-ADGroup -name "Consultants" -GroupScope Global
-    New-ADGroup -name "Vente" -GroupScope Global
-    New-ADGroup -name "IT" -GroupScope Global
-    New-ADGroup -name "Backup" -GroupScope Global
+    $base      = "DC=nevasec,DC=local"
+    $ouGroupes = "OU=Groupes,$base"
+    New-ADOrganizationalUnit -Name "Groupes" -Path $base
+    New-ADOrganizationalUnit -Name "Comptes desactives" -Path $base
+    New-ADOrganizationalUnit -Name "NevaSec" -Path $base
+    $org = "OU=NevaSec,$base"
+    foreach ($o in "Direction","Finance","RH","Management","Commercial","Marketing","Consultants","IT","Comptes de service","Comptes administrateurs") {
+        New-ADOrganizationalUnit -Name $o -Path $org
+    }
+    $ouDir  = "OU=Direction,$org"
+    $ouFin  = "OU=Finance,$org"
+    $ouRH   = "OU=RH,$org"
+    $ouMgmt = "OU=Management,$org"
+    $ouComm = "OU=Commercial,$org"
+    $ouMkt  = "OU=Marketing,$org"
+    $ouCons = "OU=Consultants,$org"
+    $ouIT   = "OU=IT,$org"
+    $ouSvc  = "OU=Comptes de service,$org"
+    $ouAdm  = "OU=Comptes administrateurs,$org"
+    $ouDis  = "OU=Comptes desactives,$base"
 
-    New-ADOrganizationalUnit -Name "Groupes" -Path "DC=nevasec,DC=local"
-    New-ADOrganizationalUnit -Name "RH" -Path "DC=nevasec,DC=local"
-    New-ADOrganizationalUnit -Name "Management" -Path "DC=nevasec,DC=local"
-    New-ADOrganizationalUnit -Name "Consultants" -Path "DC=nevasec,DC=local"
-    New-ADOrganizationalUnit -Name "Vente" -Path "DC=nevasec,DC=local"
-    New-ADOrganizationalUnit -Name "IT" -Path "DC=nevasec,DC=local"
-    New-ADOrganizationalUnit -Name "SVC" -Path "DC=nevasec,DC=local"
+    foreach ($grp in "RH","Management","Consultants","Commercial","IT","Backup","Finance","Direction","Marketing","Helpdesk","DBA","Developpeurs","VPN-Users","Partage-Finance") {
+        New-ADGroup -Name $grp -GroupScope Global -Path $ouGroupes
+    }
 
-    foreach ($g in Get-ADGroup -Filter *){ Get-ADGroup $g | Move-ADObject -targetpath "OU=Groupes,DC=nevasec,DC=local" -ErrorAction SilentlyContinue | Out-Null }
+    Add-User -prenom "Richard"  -nom "Cuvillier"  -sam "rcuvillier"   -Path $ouMgmt -mdp "TgBlAHYAYQBzAGUAYwAxADIAMwA="
+    New-ADUser -Name "svc-sql" -GivenName "svc" -Surname "sql" -SamAccountName "svc-sql" -Description "Service account SQL" -UserPrincipalName "svc-sql@nevasec.local" -Path $ouSvc -AccountPassword (ConvertTo-SecureString (ConvertFrom-B64 "cwBxAGwAMAB2ADMALQB1AA==") -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount -PassThru | Out-Null
+    Add-User -prenom "Louise"   -nom "Chappuis"   -sam "lchappuis"    -Path $ouRH   -mdp "QQB6AGUAcgB0AHkAMQAyADMA"
+    Add-User -prenom "Henri"    -nom "Walter"     -sam "hwalter"      -Path $ouCons -mdp "TgBlAHYAYQBzAGUAYwAqADkAOAA="
+    Add-User -prenom "Celine"   -nom "Marchand"   -sam "cmarchand"    -Path $ouFin  -mdp "QQB1AHQAbwBtAG4AZQAyADAAMgA3AA=="
+    Add-User -prenom "Admin"    -nom "Sylvain Cormier" -sam "adm-scormier" -Path $ouAdm -mdp "egBMADAAVAAxAE4AIQA0AEEAQQBZAHIA"
+    Add-User -prenom "Olivier"  -nom "Bossuet"    -sam "obossuet"     -Path $ouComm -mdp "YgB4AEwAIQBAADIATQBlADEATQA4AHUA"
+    Add-User -prenom "Kevin"    -nom "Moreau"     -sam "kmoreau"      -Path $ouMkt  -mdp "VwBlAGwAYwBvAG0AZQAyADAAMgA3ACEA"
+    Add-User -prenom "Basile"   -nom "Delacroix"  -sam "bdelacroix"   -Path $ouMgmt -mdp "QQB6AGUAcgB0AHkAIwAxADUA"
+    New-ADUser -Name "svc-backup" -GivenName "svc" -Surname "backup" -SamAccountName "svc-backup" -Description "Service account backup. Mdp: B4ckup-S3rv1c3" -UserPrincipalName "svc-backup@nevasec.local" -Path $ouSvc -AccountPassword (ConvertTo-SecureString (ConvertFrom-B64 "QgA0AGMAawB1AHAALQBTADMAcgB2ADEAYwAzAA==") -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
+    Add-User -prenom "Thibault" -nom "Roussel"    -sam "troussel"     -Path $ouFin  -mdp "NwBiAFEAIQB4ADIAVgBtADkAawBMAHIAYQBQAA=="
+    Add-User -prenom "Bertrand" -nom "Dubois"     -sam "bdubois"      -Path $ouCons -mdp "SwBpAEwAbABFAHIANQAhAA=="
+    Add-User -prenom "Jean-Marc" -nom "Lefevre"   -sam "jlefevre"     -Path $ouDir  -mdp "RwB0ADQAJABwAFIAOAB3AFoAIQBxAG4ARAB4AA=="
+    Add-User -prenom "Sarah"    -nom "Meyer"      -sam "smeyer"       -Path $ouRH   -mdp "TgBlAHYAYQBzAGUAYwAyADAAMgA4ACEA"
+    New-ADUser -Name "svc-web" -GivenName "svc" -Surname "web" -SamAccountName "svc-web" -Description "Service account IIS web" -UserPrincipalName "svc-web@nevasec.local" -Path $ouSvc -AccountPassword (ConvertTo-SecureString (ConvertFrom-B64 "UABAAHMAcwBXADAAcgBkAC0AMgAwADEAMQAhAA==") -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount | Out-Null
+    Add-User -prenom "Emilie"   -nom "Garnier"    -sam "egarnier"     -Path $ouMkt  -mdp "UAByAGkAbgB0AGUAbQBwAHMALQAyADAAMgA4AA=="
+    Add-User -prenom "Didier"   -nom "Leroux"     -sam "dleroux"      -Path $ouCons -mdp "TgBlAHYAYQAqADkAOAAyAA=="
+    Add-User -prenom "Martine"  -nom "Baudet"     -sam "mbaudet"      -Path $ouMgmt -mdp "NgA3AEQAMQBmAEQAJQAlAGsAOAByADgA"
+    New-ADUser -Name "Arnaud Trottier" -GivenName "Arnaud" -Surname "Trottier" -SamAccountName "atrottier" -Description "Desactive le 14/06/2026" -UserPrincipalName "atrottier@nevasec.local" -Path $ouDis -AccountPassword (ConvertTo-SecureString (ConvertFrom-B64 "SABlAGwAbABvADIAMAAyADYAIQA=") -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
+    Add-User -prenom "Jessica"  -nom "Plantier"   -sam "jplantier"    -Path $ouComm -mdp "TgAzAHYANABnAHIAMAB1AHAA"
+    Add-User -prenom "Nadia"    -nom "Benali"     -sam "nbenali"      -Path $ouFin  -mdp "VgBhAGMAYQBuAGMAZQBzAC0ARQB0AGUAMgAwADIANwA="
+    New-ADUser -Name "svc-legacy" -GivenName "svc" -Surname "legacy" -SamAccountName "svc-legacy" -Description "Service account legacy app" -UserPrincipalName "svc-legacy@nevasec.local" -Path $ouSvc -AccountPassword (ConvertTo-SecureString (ConvertFrom-B64 "SwBpAGwAbAB0AGgAaQBzAGwAZQBnAGEAYwB5ACEA") -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount | Out-Null
+    Add-User -prenom "Christine" -nom "Vasseur"   -sam "cvasseur"     -Path $ouDir  -mdp "TQBhAHIAcwBlAGkAbABsAGUAMgAwADIAOAAhAA=="
+    Add-User -prenom "Pascal"   -nom "Mesny"      -sam "pmesny"       -Path $ouCons -mdp "dwBzADkAcABBACYAbABnADcATgAzADIA"
+    Add-User -prenom "Fabrice"  -nom "Girault"    -sam "fgirault"     -Path $ouRH   -mdp "QQB6AGUAcgB0AHkAMgAwADIANwA="
+    Add-User -prenom "Admin"    -nom "Maxime Laurens" -sam "adm-mlaurens" -Path $ouAdm -mdp "UwB1AHAAZQByAC0AUABhAHMAcwB3AG8AcgBkAC0ANAAtAEEAZABtAGkAbgA="
+    Add-User -prenom "Jade"     -nom "Schneider"  -sam "jschneider"   -Path $ouComm -mdp "VAB6AGoAMAA0ADQAWgBlAFYAJgBZAHUA"
+    Add-User -prenom "Sofian"   -nom "Haddad"     -sam "shaddad"      -Path $ouMkt  -mdp "SwBwADkAIwBtAFgAMgB2AEwANwAhAGIAUQBlAA=="
+    Add-User -prenom "Ludovic"  -nom "Michaux"    -sam "lmichaux"     -Path $ouMgmt -mdp "TgBlAHYAYQBzAGUAYwAyADAAMgA3AA=="
+    New-ADUser -Name "svc-report" -GivenName "svc" -Surname "report" -SamAccountName "svc-report" -Description "Service account reporting" -UserPrincipalName "svc-report@nevasec.local" -Path $ouSvc -AccountPassword (ConvertTo-SecureString (ConvertFrom-B64 "UgBhAHAAcABvAHIAdABzAC0AMgAwADIANwA=") -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount | Out-Null
+    Add-User -prenom "Lydia"    -nom "Beaumont"   -sam "lbeaumont"    -Path $ouCons -mdp "VAAwAGsAaQAwAEgAMAB0ADMAbAA="
+    Add-User -prenom "Nathalie" -nom "Perrin"     -sam "nperrin"      -Path $ouRH   -mdp "TgBhAHQAaABhAGwAaQBlADIAMAAyADcA"
+    New-ADUser -Name "Guillaume Brazier" -GivenName "Guillaume" -Surname "Brazier" -SamAccountName "gbrazier" -Description "Desactive le 25/08/2026" -UserPrincipalName "gbrazier@nevasec.local" -Path $ouDis -AccountPassword (ConvertTo-SecureString (ConvertFrom-B64 "UwB1AG0AbQBlAHIAMgAwADIANwA=") -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
+    Add-User -prenom "Sylvain"  -nom "Cormier"    -sam "scormier"     -Path $ouIT   -mdp "egBMADAAVAAxAE4AIQA0AEEAQQBZAHIA"
+    Add-User -prenom "Alexia"   -nom "Chabert"    -sam "achabert"     -Path $ouCons -mdp "UABPAGkAdQAqACYAOAA3AF4AJQA="
+    Add-User -prenom "Laetitia" -nom "Portier"    -sam "lportier"     -Path $ouComm -mdp "UAByAGkAbgB0AGUAbQBwAHMAMgAwADIAOAAhAA=="
+    Add-User -prenom "Quentin"  -nom "Faure"      -sam "qfaure"       -Path $ouCons -mdp "RgBvAG8AdABiAGEAbABsAC0AMgAwADIANwA="
+    Add-User -prenom "Maxime"   -nom "Laurens"    -sam "mlaurens"     -Path $ouIT   -mdp "IQAwAE4AZQB2AGEAZwByAHUAcAAwACEA"
+    Add-User -prenom "Dylan"    -nom "Brassard"   -sam "dbrassard"    -Path $ouCons -mdp "SwBzAGQAaQAzADQAMgA2AEMAJgB2AGUA"
+    Add-User -prenom "Remi"     -nom "Colin"      -sam "rcolin"       -Path $ouIT   -mdp "SABpAHYAZQByADIAMAAyADgAIQA="
+    Add-User -prenom "Helpdesk" -nom "Deploiement" -sam "hdesk"        -Path $ouIT   -mdp "SABkACEANwBrAFAAMgBtAFgAegA5AFEAdwAkAEwAcgA="
+    Add-User -prenom "Cyrille"  -nom "Toutain"    -sam "ctoutain"     -Path $ouComm -mdp "cQBzAGcANQA2ADQAUwBGADIALQAkAA=="
+    Add-User -prenom "Manon"    -nom "Aubry"      -sam "maubry"       -Path $ouCons -mdp "MwB2AE4AcQBaADgAdwAhAHIATAB4AFAAMgA="
+    Add-User -prenom "Lara"     -nom "Fournier"   -sam "lfournier"    -Path $ouCons -mdp "OAA3AGMAYgB6AHUAdgBzAEYAMAAyACYA"
+    Add-User -prenom "Patrick"  -nom "Lemoine"    -sam "plemoine"     -Path $ouComm -mdp "TQBhAHIAcwBlAGkAbABsAGUAMgAwADIAOAAhAA=="
+    Add-User -prenom "Hugo"     -nom "Dupuy"      -sam "hdupuy"       -Path $ouCons -mdp "WAAyAHcAXgB2AFkANAAzADIARQBvAFAA"
+    Add-User -prenom "Julien"   -nom "Breton"     -sam "jbreton"      -Path $ouIT   -mdp "RABxADcAIQB6AFIAMgB3AFgAOQBtAEsAcABMAA=="
+    Add-User -prenom "Pierre"   -nom "Sylvestre"  -sam "psylvestre"   -Path $ouCons -mdp "UABhAHMAcwB3AG8AcgBkADEAMgAzACEA"
 
-    # Management
-    Add-User -prenom "Richard" -nom "Cuvillier" -sam "rcuvillier" -ou "management" -mdp "TgBlAHYAYQBzAGUAYwAxADIAMwA="
-    Add-User -prenom "Basile" -nom "Delacroix" -sam "bdelacroix" -ou "management" -mdp "QQB6AGUAcgB0AHkAIwAxADUA"
-    Add-User -prenom "Martine" -nom "Baudet" -sam "mbaudet" -ou "management" -mdp "NgA3AEQAMQBmAEQAJQAlAGsAOAByADgA"
-    Add-User -prenom "Ludovic" -nom "Michaux" -sam "lmichaux" -ou "management" -mdp "TgBlAHYAYQBzAGUAYwAyADAAMgA0AA=="
-    Add-ADGroupMember -Identity "Management" -Members rcuvillier,bdelacroix,mbaudet,lmichaux
-
-    # RH
-    Add-User -prenom "Louise" -nom "Chappuis" -sam "lchappuis" -ou "rh" -mdp "QQB6AGUAcgB0AHkAMQAyADMA"
-    Add-User -prenom "Sarah" -nom "Meyer" -sam "smeyer" -ou "rh" -mdp "TgBlAHYAYQBzAGUAYwAyADAAMgA0ACEA"
-    Add-User -prenom "Fabrice" -nom "Girault" -sam "fgirault" -ou "rh" -mdp "QQB6AGUAcgB0AHkAMgAwADIANAA="
-    Add-ADGroupMember -Identity "RH" -Members lchappuis,smeyer,fgirault
-
-    # Consultants
-    Add-User -prenom "Henri" -nom "Walter" -sam "hwalter" -ou "consultants" -mdp "VwBvAGQAZQBuAHMAZQBjACoAOQA4AA=="
-    Add-User -prenom "Bertrand" -nom "Dubois" -sam "bdubois" -ou "consultants" -mdp "SwBpAEwAbABFAHIANQAhAA=="
-    Add-User -prenom "Didier" -nom "Leroux" -sam "dleroux" -ou "consultants" -mdp "TgBlAHYAYQAqADkAOAAyAA=="
-    Add-User -prenom "Pascal" -nom "Mesny" -sam "pmesny" -ou "consultants" -mdp "dwBzADkAcABBACYAbABnADcATgAzADIA"
-    Add-User -prenom "Lydia" -nom "Beaumont" -sam "lbeaumont" -ou "consultants" -mdp "VAAwAGsAaQAwAEgAMAB0ADMAbAA="
-    Add-User -prenom "Alexia" -nom "Chabert" -sam "achabert" -ou "consultants" -mdp "UABPAGkAdQAqACYAOAA3AF4AJQA="
-    Add-User -prenom "Dylan" -nom "Brassard" -sam "dbrassard" -ou "consultants" -mdp "SwBzAGQAaQAzADQAMgA2AEMAJgB2AGUA"
-    Add-User -prenom "Lara" -nom "Fournier" -sam "lfournier" -ou "consultants" -mdp "OAA3AGMAYgB6AHUAdgBzAEYAMAAyACYA"
-    Add-User -prenom "Hugo" -nom "Dupuy" -sam "hdupuy" -ou "consultants" -mdp "WAAyAHcAXgB2AFkANAAzADIARQBvAFAA"
-    Add-User -prenom "Pierre" -nom "Sylvestre" -sam "psylvestre" -ou "consultants" -mdp "UABhAHMAcwB3AG8AcgBkADEAMgAzACEA"
-    Add-ADGroupMember -Identity "Consultants" -Members hwalter,bdubois,dleroux,pmesny,lbeaumont,achabert,dbrassard,lfournier,hdupuy,psylvestre
-
-    # Vente
-    Add-User -prenom "Olivier" -nom "Bossuet" -sam "obossuet" -ou "vente" -mdp "YgB4AEwAIQBAADIATQBlADEATQA4AHUA"
-    Add-User -prenom "Jessica" -nom "Plantier" -sam "jplantier" -ou "vente" -mdp "TgAzAHYANABnAHIAMAB1AHAA"
-    Add-User -prenom "Jade" -nom "Schneider" -sam "jschneider" -ou "vente" -mdp "VAB6AGoAMAA0ADQAWgBlAFYAJgBZAHUA"
-    Add-User -prenom "Laetitia" -nom "Portier" -sam "lportier" -ou "vente" -mdp "QQB6AGUAcgB0AHkAMgAwADIANAA="
-    Add-User -prenom "Cyrille" -nom "Toutain" -sam "ctoutain" -ou "vente" -mdp "cQBzAGcANQA2ADQAUwBGADIALQAkAA=="
-    Add-ADGroupMember -Identity "Vente" -Members obossuet,jplantier,jschneider,lportier,ctoutain
-
-    # IT accounts
-    Add-User -prenom "Sylvain" -nom "Cormier" -sam "scormier" -ou "it" -mdp "egBMADAAVAAxAE4AIQA0AEEAQQBZAHIA"
-    Add-User -prenom "Admin" -nom "Sylvain Cormier" -sam "adm-scormier" -ou "it" -mdp "egBMADAAVAAxAE4AIQA0AEEAQQBZAHIA"
-    Add-User -prenom "Maxime" -nom "Laurens" -sam "mlaurens" -ou "it" -mdp "IQAwAE4AZQB2AGEAZwByAHUAcAAwACEA"
-    Add-User -prenom "Admin" -nom "Maxime Laurens" -sam "adm-mlaurens" -ou "it" -mdp "UwB1AHAAZQByAC0AUABhAHMAcwB3AG8AcgBkAC0ANAAtAEEAZABtAGkAbgA="
-    Add-ADGroupMember -Identity "IT" -Members scormier,mlaurens
-    Add-ADGroupMember -Identity "Admins du domaine" -Members adm-scormier,adm-mlaurens
-
-    # Disabled accounts
-    New-ADUser -Name "Arnaud Trottier" -GivenName "Arnaud" -Surname "Trottier" -SamAccountName "atrottier" -Description "Desactive le 14/06/2023" -UserPrincipalName "atrottier@nevasec.local" -Path "OU=vente,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Hello123" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
-    New-ADUser -Name "Guillaume Brazier" -GivenName "Guillaume" -Surname "Brazier" -SamAccountName "gbrazier" -Description "Desactive le 25/08/2023" -UserPrincipalName "gbrazier@nevasec.local" -Path "OU=consultants,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Summer2024" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
-
-    # Service accounts
-    New-ADUser -Name "svc-sql" -GivenName "svc" -Surname "sql" -SamAccountName "svc-sql" -Description "Service account SQL" -UserPrincipalName "svc-sql@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "sql0v3-u" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount -PassThru  | Out-Null
-    New-ADUser -Name "svc-backup" -GivenName "svc" -Surname "backup" -SamAccountName "svc-backup" -Description "Service account backup. Mdp: B4ckup-S3rv1c3" -UserPrincipalName "svc-backup@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "B4ckup-S3rv1c3" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Out-Null
-    New-ADUser -Name "svc-legacy" -GivenName "svc" -Surname "legacy" -SamAccountName "svc-legacy" -Description "Service account legacy app" -UserPrincipalName "svc-legacy@nevasec.local" -Path "OU=SVC,DC=nevasec,DC=local" -AccountPassword (ConvertTo-SecureString "Killthislegacy!" -AsPlainText -Force) -PasswordNeverExpires $true -PassThru | Enable-ADAccount  | Out-Null
-    Add-ADGroupMember -Identity "Backup" -Members svc-backup
+    Add-ADGroupMember -Identity "Management"   -Members rcuvillier,bdelacroix,mbaudet,lmichaux
+    Add-ADGroupMember -Identity "RH"           -Members lchappuis,smeyer,fgirault,nperrin
+    Add-ADGroupMember -Identity "Consultants"  -Members hwalter,bdubois,dleroux,pmesny,lbeaumont,achabert,dbrassard,lfournier,hdupuy,psylvestre,qfaure,maubry
+    Add-ADGroupMember -Identity "Commercial"   -Members obossuet,jplantier,jschneider,lportier,ctoutain,plemoine
+    Add-ADGroupMember -Identity "Finance"      -Members cmarchand,troussel,nbenali
+    Add-ADGroupMember -Identity "Direction"    -Members jlefevre,cvasseur
+    Add-ADGroupMember -Identity "Marketing"    -Members kmoreau,egarnier,shaddad
+    Add-ADGroupMember -Identity "IT"           -Members scormier,mlaurens
+    Add-ADGroupMember -Identity "Helpdesk"     -Members rcolin,jbreton,hdesk
+    Add-ADGroupMember -Identity "DBA"          -Members svc-sql,svc-web,jbreton
+    Add-ADGroupMember -Identity "Developpeurs" -Members qfaure,maubry
+    Add-ADGroupMember -Identity "VPN-Users"    -Members nbenali,egarnier,plemoine
+    Add-ADGroupMember -Identity "Partage-Finance" -Members cmarchand,troussel
+    Add-ADGroupMember -Identity "Backup"       -Members svc-backup
+    Add-ADGroupMember -Identity "Management"   -Members (Get-ADGroup "Direction")
+    Add-ADGroupMember -Identity "$((Get-ADDomain).DomainSID.Value)-512" -Members adm-scormier,adm-mlaurens
 
     setspn -A DC01/svc-sql.nevasec.local:`60111 nevasec\svc-sql > $null
     setspn -A svc-sql/nevasec.local nevasec\svc-sql > $null
     setspn -A DomainController/svc-sql.nevasec.local:`60111 nevasec\svc-sql > $null
+    setspn -A HTTP/svc-web.nevasec.local nevasec\svc-web > $null
 
     Get-ADUser -Identity "svc-legacy" | Set-ADAccountControl -DoesNotRequirePreAuth:$true
 
-    # Share
+    Write-Host("`n  [++] Configuration gMSA")
+    Add-KdsRootKey -EffectiveTime ((Get-Date).AddHours(-10)) -ErrorAction SilentlyContinue | Out-Null
+    New-ADServiceAccount -Name "svc-gmsa" -DNSHostName "svc-gmsa.nevasec.local" -PrincipalsAllowedToRetrieveManagedPassword "Developpeurs" -Path $ouSvc -Enabled $true -WarningAction SilentlyContinue
+
     mkdir C:\Share
-    New-SmbShare -Name "Share" -Path "C:\Share" -ChangeAccess "Utilisateurs" -FullAccess "Tout le monde" -WarningAction SilentlyContinue | Out-Null
+    $everyoneName = (New-Object System.Security.Principal.SecurityIdentifier("S-1-1-0")).Translate([System.Security.Principal.NTAccount]).Value
+    $usersName    = (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-545")).Translate([System.Security.Principal.NTAccount]).Value
+    New-SmbShare -Name "Share" -Path "C:\Share" -ChangeAccess $usersName -FullAccess $everyoneName -WarningAction SilentlyContinue | Out-Null
 
-    # Tools
     Invoke-WebRequest -Uri "https://github.com/NevaSec/ADLab/raw/main/LdapAdminPortable.zip" -OutFile "C:\Share\LdapAdminPortable.zip"
+    Invoke-WebRequest -Uri "https://github.com/NevaSec/ADLab/raw/main/share.zip" -OutFile "C:\Share\share.zip"
+    Expand-Archive -Path "C:\Share\share.zip" -DestinationPath "C:\Share" -Force
+    Remove-Item "C:\Share\share.zip" -Force
 
-    # GPO
     Write-Host("`n  [++] Configuration GPO")
     New-GPO -Name "CustomGPO"
 
@@ -288,29 +306,35 @@ function Add-ServerContent{
 
     New-GPLink -Name "CustomGPO" -Target "DC=NEVASEC,DC=local" -LinkEnabled Yes -Enforced Yes
 
-    # GPP
-    New-Item "\\DC01\sysvol\nevasec.local\Policies\Groups.xml" -ItemType File -Value ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("PAA/AHgAbQBsACAAdgBlAHIAcwBpAG8AbgA9ACIAMQAuADAAIgAgAGUAbgBjAG8AZABpAG4AZwA9ACIAdQB0AGYALQA4ACIAIAA/AD4ADQAKADwARwByAG8AdQBwAHMAIABjAGwAcwBpAGQAPQAiAHsAZQAxADgAYgBkADMAMABiAC0AYwA3AGIAZAAtAGMAOQA5AGYALQA3ADgAYgBiAC0AMgAwADYAYgA0ADMANABkADAAYgAwADgAfQAiAD4ADQAKAAkAPABVAHMAZQByACAAYwBsAHMAaQBkAD0AIgB7AEQARgA1AEYAMQA4ADUANQAtADUAMQBFADUALQA0AGQAMgA0AC0AOABCADEAQQAtAEQAOQBCAEQARQA5ADgAQgBBADEARAAxAH0AIgAgAG4AYQBtAGUAPQAiAEEAZABtAGkAbgBpAHMAdAByAGEAdABvAHIAIAAoAGIAdQBpAGwAdAAtAGkAbgApACIAIABpAG0AYQBnAGUAPQAiADIAIgAgAGMAaABhAG4AZwBlAGQAPQAiADIAMAAxADUALQAwADIALQAxADgAIAAwADEAOgA1ADMAOgAwADEAIgAgAHUAaQBkAD0AIgB7AEQANQBGAEUANwAzADUAMgAtADgAMQBFADEALQA0ADIAQQAyAC0AQgA3AEQAQQAtADEAMQA4ADQAMAAyAEIARQA0AEMAMwAzAH0AIgA+AA0ACgAJAAkAPABQAHIAbwBwAGUAcgB0AGkAZQBzACAAYQBjAHQAaQBvAG4APQAiAFUAIgAgAG4AZQB3AE4AYQBtAGUAPQAiACIAIABmAHUAbABsAE4AYQBtAGUAPQAiACIAIABkAGUAcwBjAHIAaQBwAHQAaQBvAG4APQAiACIAIABjAHAAYQBzAHMAdwBvAHIAZAA9ACIAUgBJADEAMwAzAEIAMgBXAGwAMgBDAGkASQAwAEMAYQB1ADEARAB0AHIAdABUAGUAMwB3AGQARgB3AHoAQwBpAFcAQgA1AFAAUwBBAHgAWABNAEQAcwB0AGMAaABKAHQAMwBiAEwAMABVAGkAZQAwAEIAYQBaAC8ANwByAGQAUQBqAHUAZwBUAG8AbgBGADMAWgBXAEEASwBhADEAaQBSAHYAZAA0AEoARwBRACIAIABjAGgAYQBuAGcAZQBMAG8AZwBvAG4APQAiADAAIgAgAG4AbwBDAGgAYQBuAGcAZQA9ACIAMAAiACAAbgBlAHYAZQByAEUAeABwAGkAcgBlAHMAPQAiADAAIgAgAGEAYwBjAHQARABpAHMAYQBiAGwAZQBkAD0AIgAwACIAIABzAHUAYgBBAHUAdABoAG8AbgB0AHkAPQAiAFIASQBEAF8AQQBEAE0ASQBOACIAIAB1AHMAZQByAE4AYQBtAGUAPQAiAGkAbgBzAHQAYQBsAGwAcABjACIALwA+AA0ACgAJADwALwBVAHMAZQByAD4ADQAKADwALwBHAHIAbwB1AHAAcwA+AA==")))
+    $gppGpoName = "Postes - Compte admin local"
+    $gppGpo = New-GPO -Name $gppGpoName
+    New-GPLink -Name $gppGpoName -Target "DC=nevasec,DC=local" -LinkEnabled Yes | Out-Null
+    $gppGuid = "{$($gppGpo.Id.Guid.ToUpper())}"
+    $gppDir = "C:\Windows\SYSVOL\sysvol\nevasec.local\Policies\$gppGuid\Machine\Preferences\Groups"
+    New-Item -Path $gppDir -ItemType Directory -Force | Out-Null
+    New-Item "$gppDir\Groups.xml" -ItemType File -Value ([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("PAA/AHgAbQBsACAAdgBlAHIAcwBpAG8AbgA9ACIAMQAuADAAIgAgAGUAbgBjAG8AZABpAG4AZwA9ACIAdQB0AGYALQA4ACIAPwA+AA0ACgA8AEcAcgBvAHUAcABzACAAYwBsAHMAaQBkAD0AIgB7ADMAMQAyADUARQA5ADMANwAtAEUAQgAxADYALQA0AGIANABjAC0AOQA5ADMANAAtADUANAA0AEYAQwA2AEQAMgA0AEQAMgA2AH0AIgA+ADwAVQBzAGUAcgAgAGMAbABzAGkAZAA9ACIAewBEAEYANQBGADEAOAA1ADUALQA1ADEARQA1AC0ANABkADIANAAtADgAQgAxAEEALQBEADkAQgBEAEUAOQA4AEIAQQAxAEQAMQB9ACIAIABuAGEAbQBlAD0AIgBBAGQAbQBpAG4AaQBzAHQAcgBhAHQAZQB1AHIAIgAgAGkAbQBhAGcAZQA9ACIAMgAiACAAYwBoAGEAbgBnAGUAZAA9ACIAMgAwADIAMgAtADAAMwAtADEANAAgADAAOQA6ADEAMgA6ADQANwAiACAAdQBpAGQAPQAiAHsAMgBEADQAQgAyAEMAMwBBAC0AOQBGADEARQAtADQARQA3AEIALQA5AEMAMgAxAC0ANQBBADEAQgA3AEUANgBGADAAQwA0ADQAfQAiAD4APABQAHIAbwBwAGUAcgB0AGkAZQBzACAAYQBjAHQAaQBvAG4APQAiAFUAIgAgAG4AZQB3AE4AYQBtAGUAPQAiACIAIABmAHUAbABsAE4AYQBtAGUAPQAiAEMAbwBtAHAAdABlACAAYQBkAG0AaQBuAGkAcwB0AHIAYQB0AGUAdQByACAAbABvAGMAYQBsACIAIABkAGUAcwBjAHIAaQBwAHQAaQBvAG4APQAiAEMAbwBtAHAAdABlACAAYQBkAG0AaQBuACAAbABvAGMAYQBsACAAcwB0AGEAbgBkAGEAcgBkAGkAcwBlACAALQAgAGQAZQBwAGwAbwBpAGUAbQBlAG4AdAAgAHAAYQByAGMAIgAgAGMAcABhAHMAcwB3AG8AcgBkAD0AIgBIAEYAMABiADgASQBNAFoARQBKAFcAWABxAGMANgA1ADgAawBqAEoASQBpAHkANwArAGkARgBWADkAMQBKAG0AZQBQAC8AaABNACsAWABiAHEALwBJAD0AIgAgAGMAaABhAG4AZwBlAEwAbwBnAG8AbgA9ACIAMAAiACAAbgBvAEMAaABhAG4AZwBlAD0AIgAwACIAIABuAGUAdgBlAHIARQB4AHAAaQByAGUAcwA9ACIAMQAiACAAYQBjAGMAdABEAGkAcwBhAGIAbABlAGQAPQAiADAAIgAgAHMAdQBiAEEAdQB0AGgAbwByAGkAdAB5AD0AIgBSAEkARABfAEEARABNAEkATgAiACAAdQBzAGUAcgBOAGEAbQBlAD0AIgBBAGQAbQBpAG4AaQBzAHQAcgBhAHQAZQB1AHIAIgAvAD4APAAvAFUAcwBlAHIAPgA8AC8ARwByAG8AdQBwAHMAPgA="))) | Out-Null
+    Set-Content -Path "C:\Windows\SYSVOL\sysvol\nevasec.local\Policies\$gppGuid\GPT.INI" -Value "[General]`r`nVersion=1`r`ndisplayName=$gppGpoName" -Encoding ASCII
+    Set-ADObject -Identity "CN=$gppGuid,CN=Policies,CN=System,DC=nevasec,DC=local" -Replace @{gPCMachineExtensionNames="[{00000000-0000-0000-0000-000000000000}{79F92669-4224-476C-9C5C-6EFB4D87DF4A}][{17D89FEC-5C44-4972-B12D-241CAEF74509}{79F92669-4224-476C-9C5C-6EFB4D87DF4A}]"; versionNumber=1}
 
-    # ACLs
     Write-Host("`n  [++] Configuration ACLs")
-    Set-VulnerableACLs
+    Set-Delegations
 
-    # Certificate template
     Write-Host("`n  [++] Configuration ADCS template")
-    New-VulnerableCertTemplate -DisplayName "VPNCert" -SourceTemplateCN "User"
+    New-CertTemplate -DisplayName "VPNCert" -SourceTemplateCN "User"
+    New-CertTemplate -DisplayName "HelpdeskWorkstation" -SourceTemplateCN "User" -NameFlag 0 -FullControlGroup "Helpdesk"
 }
 
-
-function New-VulnerableCertTemplate {
+function New-CertTemplate {
     param(
         [string]$DisplayName = "VPNCert",
-        [string]$SourceTemplateCN = "User"
+        [string]$SourceTemplateCN = "User",
+        [int]$NameFlag = 1,
+        [string]$FullControlGroup = ""
     )
 
     $ConfigNC = (Get-ADRootDSE).configurationNamingContext
     $TemplatePath = "CN=Certificate Templates,CN=Public Key Services,CN=Services,$ConfigNC"
 
-    # Get source template by CN (CN is always in English)
     $Source = Get-ADObject -SearchBase $TemplatePath -Filter "cn -eq '$SourceTemplateCN'" -Properties *
 
     if (-not $Source) {
@@ -318,7 +342,6 @@ function New-VulnerableCertTemplate {
         return
     }
 
-    # Generate unique OID for the new template
     $OIDPath = "CN=OID,CN=Public Key Services,CN=Services,$ConfigNC"
     $ExistingOIDs = Get-ADObject -SearchBase $OIDPath -Filter "objectClass -eq 'msPKI-Enterprise-Oid'" -Properties msPKI-Cert-Template-OID | Select-Object -First 1
     if ($ExistingOIDs) {
@@ -331,19 +354,16 @@ function New-VulnerableCertTemplate {
     $NewOID = "$ForestOID.$Part1.$Part2"
     $OIDName = $DisplayName.Replace(' ','') + "-" + (Get-Random -Minimum 10000 -Maximum 99999)
 
-    # Create OID object for the new template
     New-ADObject -Path $OIDPath -Name $OIDName -Type "msPKI-Enterprise-Oid" -OtherAttributes @{
         'displayName' = $DisplayName
         'flags' = [System.Int32]1
         'msPKI-Cert-Template-OID' = $NewOID
     }
 
-    # Binary attributes - 1 year validity, 6 weeks overlap
     $pKIExpirationPeriod = [byte[]](0x00, 0x80, 0x1A, 0x06, 0x00, 0x00, 0x00, 0x00)
     $pKIOverlapPeriod = [byte[]](0x00, 0x80, 0xA6, 0x0A, 0x02, 0x00, 0x00, 0x00)
     $pKIKeyUsage = [byte[]](0xA0, 0x00)
 
-    # Prepare attributes for new template
     $TemplateAttrs = @{
         'displayName' = $DisplayName
         'msPKI-Cert-Template-OID' = $NewOID
@@ -357,7 +377,7 @@ function New-VulnerableCertTemplate {
         'msPKI-Enrollment-Flag' = [System.Int32]0
         'msPKI-Private-Key-Flag' = [System.Int32]16842752
         'msPKI-Minimal-Key-Size' = [System.Int32]2048
-        'msPKI-Certificate-Name-Flag' = [System.Int32]1
+        'msPKI-Certificate-Name-Flag' = [System.Int32]$NameFlag
         'pKIExtendedKeyUsage' = @('1.3.6.1.5.5.7.3.2')
         'msPKI-Certificate-Application-Policy' = @('1.3.6.1.5.5.7.3.2')
         'pKICriticalExtensions' = @('2.5.29.15')
@@ -367,24 +387,20 @@ function New-VulnerableCertTemplate {
         'pKIKeyUsage' = $pKIKeyUsage
     }
 
-    # Create new template (no -DisplayName parameter, it's in OtherAttributes)
     $TemplateCN = $DisplayName.Replace(' ','')
     New-ADObject -Path $TemplatePath -Name $TemplateCN -Type pKICertificateTemplate -OtherAttributes $TemplateAttrs
 
-    # Wait for replication
     Start-Sleep -Seconds 2
 
-    # Set permissions - Allow Domain Users to Enroll
     $TemplateObj = Get-ADObject -SearchBase $TemplatePath -Filter "cn -eq '$TemplateCN'"
     if (-not $TemplateObj) {
         Write-Host "    Erreur: template non cree" -ForegroundColor Red
         return
     }
 
-    $DomainUsersSID = (Get-ADGroup -Identity "Utilisateurs du domaine").SID
+    $DomainUsersSID = (Get-ADGroup -Identity "$((Get-ADDomain).DomainSID.Value)-513").SID
     $acl = Get-Acl "AD:$($TemplateObj.DistinguishedName)"
 
-    # Enroll permission (Extended Right)
     $EnrollGUID = [GUID]"0e10c968-78fb-11d2-90d4-00c04f79dc55"
     $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
         $DomainUsersSID,
@@ -394,16 +410,21 @@ function New-VulnerableCertTemplate {
     )
     $acl.AddAccessRule($ace)
 
-    # Read permission
     $ace2 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
         $DomainUsersSID,
         "GenericRead",
         "Allow"
     )
     $acl.AddAccessRule($ace2)
+
+    if ($FullControlGroup) {
+        $CtrlSID = (Get-ADGroup -Identity $FullControlGroup).SID
+        $ace3 = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($CtrlSID, "GenericAll", "Allow")
+        $acl.AddAccessRule($ace3)
+    }
+
     Set-Acl "AD:$($TemplateObj.DistinguishedName)" $acl
 
-    # Publish template to CA
     $EnrollmentPath = "CN=Enrollment Services,CN=Public Key Services,CN=Services,$ConfigNC"
     $CAs = Get-ADObject -SearchBase $EnrollmentPath -SearchScope OneLevel -Filter *
     foreach ($CA in $CAs) {
@@ -411,10 +432,9 @@ function New-VulnerableCertTemplate {
     }
 }
 
-function Set-VulnerableACLs {
+function Set-Delegations {
     Import-Module ActiveDirectory
 
-    # Backup group
     $BackupSID = (Get-ADGroup -Identity "Backup").SID
     $DomainDN = (Get-ADDomain).DistinguishedName
     $acl = Get-Acl "AD:$DomainDN"
@@ -424,7 +444,6 @@ function Set-VulnerableACLs {
     $acl.AddAccessRule($ace2)
     Set-Acl "AD:$DomainDN" $acl
 
-    # svc-legacy
     $SvcLegacySID = (Get-ADUser -Identity "svc-legacy").SID
     $SvcSqlDN = (Get-ADUser -Identity "svc-sql").DistinguishedName
     $acl = Get-Acl "AD:$SvcSqlDN"
@@ -432,7 +451,6 @@ function Set-VulnerableACLs {
     $acl.AddAccessRule($ace)
     Set-Acl "AD:$SvcSqlDN" $acl
 
-    # svc-sql
     $SvcSqlSID = (Get-ADUser -Identity "svc-sql").SID
     $SvcBackupDN = (Get-ADUser -Identity "svc-backup").DistinguishedName
     $acl = Get-Acl "AD:$SvcBackupDN"
@@ -440,13 +458,49 @@ function Set-VulnerableACLs {
     $acl.AddAccessRule($ace)
     Set-Acl "AD:$SvcBackupDN" $acl
 
-    # IT group
     $ITGroupSID = (Get-ADGroup -Identity "IT").SID
-    $AdminGroupDN = (Get-ADGroup -Identity "Administrateurs").DistinguishedName
+    $AdminGroupDN = (Get-ADGroup -Identity "S-1-5-32-544").DistinguishedName
     $acl = Get-Acl "AD:$AdminGroupDN"
     $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($ITGroupSID, "GenericWrite", "Allow")
     $acl.AddAccessRule($ace)
     Set-Acl "AD:$AdminGroupDN" $acl
+
+    $org = "OU=NevaSec," + (Get-ADDomain).DistinguishedName
+
+    $HelpdeskSID    = (Get-ADGroup -Identity "Helpdesk").SID
+    $ForceChangePwd = [GUID]"00299570-246d-11d0-a768-00aa006e0529"
+    $UserClassGUID  = [GUID]"bf967aba-0de6-11d0-a285-00aa003049e2"
+    foreach ($o in "Direction","Finance","RH","Management","Commercial","Marketing","Consultants") {
+        $ouDN = "OU=$o,$org"
+        $acl = Get-Acl "AD:$ouDN"
+        $ace = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($HelpdeskSID, "ExtendedRight", "Allow", $ForceChangePwd, "Descendents", $UserClassGUID)
+        $acl.AddAccessRule($ace)
+        Set-Acl "AD:$ouDN" $acl
+    }
+
+    $DevSID = (Get-ADGroup -Identity "Developpeurs").SID
+    $WebDN  = (Get-ADUser -Identity "svc-web").DistinguishedName
+    $acl = Get-Acl "AD:$WebDN"
+    $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule($DevSID, "GenericWrite", "Allow")))
+    Set-Acl "AD:$WebDN" $acl
+
+    $CvSID = (Get-ADUser -Identity "cvasseur").SID
+    $PfDN  = (Get-ADGroup -Identity "Partage-Finance").DistinguishedName
+    $acl = Get-Acl "AD:$PfDN"
+    $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule($CvSID, "WriteOwner", "Allow")))
+    Set-Acl "AD:$PfDN" $acl
+
+    $JbSID  = (Get-ADUser -Identity "jbreton").SID
+    $RepDN  = (Get-ADUser -Identity "svc-report").DistinguishedName
+    $acl = Get-Acl "AD:$RepDN"
+    $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule($JbSID, "WriteDacl", "Allow")))
+    Set-Acl "AD:$RepDN" $acl
+
+    $GmsaSID = (Get-ADServiceAccount -Identity "svc-gmsa").SID
+    $BkDN    = (Get-ADUser -Identity "svc-backup").DistinguishedName
+    $acl = Get-Acl "AD:$BkDN"
+    $acl.AddAccessRule((New-Object System.DirectoryServices.ActiveDirectoryAccessRule($GmsaSID, "GenericAll", "Allow")))
+    Set-Acl "AD:$BkDN" $acl
 }
 
 function Invoke-LabSetup{
