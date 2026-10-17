@@ -1,8 +1,5 @@
 #Requires -RunAsAdministrator
 
-# ============================================
-# Configuration centralisée
-# ============================================
 $Config = @{
     DomainName      = "NEVASEC"
     DomainFQDN      = "NEVASEC.LOCAL"
@@ -31,7 +28,7 @@ function Nuke-Defender{
     Set-MpPreference -DisableScriptScanning $true | Out-Null
 
     reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /f /v EnableLUA /t REG_DWORD /d 0 > $null
-    reg add "HKLM\System\CurrentControlSet\Services\SecurityHealthService" /v "Start" /t REG_DWORD /d "4" /f > $null  
+    reg add "HKLM\System\CurrentControlSet\Services\SecurityHealthService" /v "Start" /t REG_DWORD /d "4" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender" /v "DisableAntiSpyware" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender" /v "DisableAntiVirus" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\MpEngine" /v "MpEnablePus" /t REG_DWORD /d "0" /f > $null
@@ -40,7 +37,7 @@ function Nuke-Defender{
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableOnAccessProtection" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableRealtimeMonitoring" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableScanOnRealtimeEnable" /t REG_DWORD /d "1" /f > $null
-    reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableScriptScanning" /t REG_DWORD /d "1" /f > $null 
+    reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Real-Time Protection" /v "DisableScriptScanning" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\Reporting" /v "DisableEnhancedNotifications" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\SpyNet" /v "DisableBlockAtFirstSeen" /t REG_DWORD /d "1" /f > $null
     reg add "HKLM\Software\Policies\Microsoft\Windows Defender\SpyNet" /v "SpynetReporting" /t REG_DWORD /d "0" /f > $null
@@ -55,7 +52,6 @@ function Nuke-Defender{
     schtasks /Change /TN "Microsoft\Windows\Windows Defender\Windows Defender Verification" /Disable > $null
     reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "LocalAccountTokenFilterPolicy" /t REG_DWORD /d "1" /f > $null
 
-        # Désactivation Windows Update
     Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
     Set-Service wuauserv -StartupType Disabled
     Stop-Service bits -Force -ErrorAction SilentlyContinue
@@ -68,20 +64,10 @@ function Nuke-Defender{
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name NoAutoUpdate -Value 1
 
     Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled False | Out-Null
-    
-    # SMB signing enabled but not required
+
     reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v "RequireSecuritySignature" /t REG_DWORD /d "0" /f > $null
     reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v "requiresecuritysignature" /t REG_DWORD /d "0" /f > $null
-
-    Get-WmiObject -query "Select HotFixID  from Win32_QuickFixengineering" | sort-object -Descending -Property HotFixID|%{
-    $sUpdate=$_.HotFixID.Replace("KB","")
-    write-host ("Uninstalling update "+$sUpdate);
-    & wusa.exe /uninstall /KB:$sUpdate /quiet /norestart;
-    Wait-Process wusa 
-    Start-Sleep -s 1 }
-
 }
-
 
 function Invoke-LabSetup {
 
@@ -119,7 +105,6 @@ function Invoke-LabSetup {
             $username = "$($Config.DomainName)\$($Config.DomainAdminUser)"
             $credential = New-Object System.Management.Automation.PSCredential($username, $password)
 
-            # Vérification de la connectivité au domaine avant jonction
             Write-Host "Test de connectivité au domaine $($Config.DomainFQDN)..." -ForegroundColor Yellow
             if (Test-Connection -ComputerName $Config.DomainFQDN -Count 5 -Quiet) {
                 Write-Host "Domaine accessible, jonction en cours..." -ForegroundColor Green
@@ -151,12 +136,15 @@ function Invoke-LabSetup {
         Write-Host "`n[ETAPE 3/3] Configuration finale..." -ForegroundColor Cyan
 
         try {
-            $group = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("VQB0AGkAbABpAHMAYQB0AGUAdQByAHMAIABkAHUAIABCAHUAcgBlAGEAdQAgAOAAIABkAGkAcwB0AGEAbgBjAGUA"))
+            $rdpGroup   = (Get-LocalGroup -SID 'S-1-5-32-555').Name
+            $adminGroup = (Get-LocalGroup -SID 'S-1-5-32-544').Name
+            $domainSid    = (New-Object System.Security.Principal.NTAccount("$env:USERDOMAIN\krbtgt")).Translate([System.Security.Principal.SecurityIdentifier]).AccountDomainSid.Value
+            $domainAdmins = "$domainSid-512"
 
             Write-Host "Ajout des groupes du domaine aux administrateurs locaux..." -ForegroundColor Green
-            Add-LocalGroupMember -Group $group -Member 'NEVASEC\Admins du domaine' -ErrorAction SilentlyContinue
-            Add-LocalGroupMember -Group $group -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
-            Add-LocalGroupMember -Group Administrateurs -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
+            Add-LocalGroupMember -Group $rdpGroup   -Member $domainAdmins -ErrorAction SilentlyContinue
+            Add-LocalGroupMember -Group $rdpGroup   -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
+            Add-LocalGroupMember -Group $adminGroup -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
 
             Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminée !" -ForegroundColor Green
             Write-Host "Vous pouvez maintenant créer un snapshot de cette VM." -ForegroundColor Yellow
@@ -167,4 +155,4 @@ function Invoke-LabSetup {
             exit 1
         }
     }
-} 
+}
