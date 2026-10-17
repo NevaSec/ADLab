@@ -1,8 +1,5 @@
 #Requires -RunAsAdministrator
 
-# ============================================
-# Configuration centralisée
-# ============================================
 $Config = @{
     DomainName       = "NEVASEC"
     DomainFQDN       = "NEVASEC.LOCAL"
@@ -12,17 +9,24 @@ $Config = @{
     DCStaticIPSuffix = ".250"
     LocalAdminUser   = "srvadmin"
     LocalAdminPwd    = "Super-Password-4-Admin"
-    BotUser          = "NEVASEC\mlaurens"
-    BotPwd           = "IQAwAE4AZQB2AGEAZwByAHUAcAAwACEA"
+    TaskUser          = "NEVASEC\mlaurens"
+    TaskPwd           = "IQAwAE4AZQB2AGEAZwByAHUAcAAwACEA"
+    RdpTarget        = "TERMSRV/SQL01"
+    RdpCredUser      = "NEVASEC\hdesk"
+    RdpCredPwd       = "SABkACEANwBrAFAAMgBtAFgAegA5AFEAdwAkAEwAcgA="
 }
 
-function Invoke-LabSetup { 
+function ConvertFrom-B64 {
+    param([string]$s)
+    [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($s))
+}
+
+function Invoke-LabSetup {
 
     if ($env:COMPUTERNAME -ne $Config.HostName) {
         Write-Host "`n[ETAPE 1/3] Changement des paramètres IP et du nom, puis redémarrage..." -ForegroundColor Cyan
 
         try {
-            # Désactivation Windows Update
             Write-Host "Désactivation de Windows Update..." -ForegroundColor Yellow
             Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
             Set-Service wuauserv -StartupType Disabled
@@ -45,6 +49,10 @@ function Invoke-LabSetup {
             Disable-NetAdapterPowerManagement -Name "$NetAdapter"
             netsh interface ipv6 set dnsservers "$NetAdapter" dhcp
 
+            Write-Host "Enregistrement de la credential RDP (profil admin local)..." -ForegroundColor Yellow
+            $rdpCredPwd = ConvertFrom-B64 $Config.RdpCredPwd
+            cmdkey /generic:$($Config.RdpTarget) /user:$($Config.RdpCredUser) /pass:$rdpCredPwd | Out-Null
+
             Write-Host "Renommage de la machine en $($Config.HostName)..." -ForegroundColor Green
             Rename-Computer -NewName $Config.HostName -Restart
         }
@@ -64,7 +72,6 @@ function Invoke-LabSetup {
             $username = "$($Config.DomainName)\$($Config.DomainAdminUser)"
             $credential = New-Object System.Management.Automation.PSCredential($username, $password)
 
-            # Vérification de la connectivité au domaine avant jonction
             Write-Host "Test de connectivité au domaine $($Config.DomainFQDN)..." -ForegroundColor Yellow
             if (Test-Connection -ComputerName $Config.DomainFQDN -Count 5 -Quiet) {
                 Write-Host "Domaine accessible, jonction en cours..." -ForegroundColor Green
@@ -96,34 +103,35 @@ function Invoke-LabSetup {
         Write-Host "`n[ETAPE 3/3] Configuration finale..." -ForegroundColor Cyan
 
         try {
-            $group = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("VQB0AGkAbABpAHMAYQB0AGUAdQByAHMAIABkAHUAIABCAHUAcgBlAGEAdQAgAOAAIABkAGkAcwB0AGEAbgBjAGUA"))
+            $rdpGroup   = (Get-LocalGroup -SID 'S-1-5-32-555').Name
+            $adminGroup = (Get-LocalGroup -SID 'S-1-5-32-544').Name
+            $domainSid    = (New-Object System.Security.Principal.NTAccount("$env:USERDOMAIN\krbtgt")).Translate([System.Security.Principal.SecurityIdentifier]).AccountDomainSid.Value
+            $domainAdmins = "$domainSid-512"
 
-            # Scheduled task for network share access
-            $task = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String("LwBjACAAcABvAHcAZQByAHMAaABlAGwAbAAgAE4AZQB3AC0AUABTAEQAcgBpAHYAZQAgAC0ATgBhAG0AZQAgACIAUwBRAEwAUwBoAGEAcgBlACIAIAAtAFAAUwBQAHIAbwB2AGkAZABlAHIAIAAiAEYAaQBsAGUAUwB5AHMAdABlAG0AIgAgAC0AUgBvAG8AdAAgACIAXABcAFMAUQBMADAAMQBcAFMAaABhAHIAZQAiAA=="))
-            $repeat = (New-TimeSpan -Minutes 2)
+            $task = ConvertFrom-B64 "LwBjACAAcABvAHcAZQByAHMAaABlAGwAbAAgAE4AZQB3AC0AUABTAEQAcgBpAHYAZQAgAC0ATgBhAG0AZQAgACIAUwBRAEwAUwBoAGEAcgBlACIAIAAtAFAAUwBQAHIAbwB2AGkAZABlAHIAIAAiAEYAaQBsAGUAUwB5AHMAdABlAG0AIgAgAC0AUgBvAG8AdAAgACIAXABcAFMAUQBMADAAMQBcAFMAaABhAHIAZQAiAA=="
             $taskName = "SQLshare"
-            $botUser = $Config.BotUser
-            $botPassword = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($Config.BotPwd))
+            $botUser = $Config.TaskUser
+            $botPassword = ConvertFrom-B64 $Config.TaskPwd
 
             $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "$task"
-            $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval $repeat
+            $triggerStartup = New-ScheduledTaskTrigger -AtStartup
+            $triggerStartup.Delay = 'PT1M'
+            $triggerRepeat  = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2)
             $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RunOnlyIfNetworkAvailable -DontStopOnIdleEnd
 
             $taskExists = Get-ScheduledTask | Where-Object {$_.TaskName -like $taskName}
             if ($taskExists) {
                 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
             }
-            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -User $botUser -Password $botPassword -Settings $settings | Out-Null
+            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggerStartup,$triggerRepeat -User $botUser -Password $botPassword -Settings $settings | Out-Null
 
-            # Création de l'utilisateur local
             Write-Host "Création de l'utilisateur local $($Config.LocalAdminUser)..." -ForegroundColor Yellow
             New-LocalUser -Name $Config.LocalAdminUser -Password (ConvertTo-SecureString $Config.LocalAdminPwd -AsPlainText -Force) -ErrorAction SilentlyContinue
 
-            # Ajout des groupes du domaine
             Write-Host "Ajout des groupes du domaine aux administrateurs locaux..." -ForegroundColor Yellow
-            Add-LocalGroupMember -Group $group -Member 'NEVASEC\Admins du domaine' -ErrorAction SilentlyContinue
-            Add-LocalGroupMember -Group $group -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
-            Add-LocalGroupMember -Group 'Administrateurs' -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
+            Add-LocalGroupMember -Group $rdpGroup   -Member $domainAdmins -ErrorAction SilentlyContinue
+            Add-LocalGroupMember -Group $rdpGroup   -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
+            Add-LocalGroupMember -Group $adminGroup -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
 
             Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminée !" -ForegroundColor Green
             Write-Host "N'oubliez pas d'exécuter sur DC01:" -ForegroundColor Yellow
@@ -135,4 +143,4 @@ function Invoke-LabSetup {
             exit 1
         }
     }
-} 
+}
