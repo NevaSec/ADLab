@@ -98,6 +98,9 @@ function Invoke-LabSetup {
             $rdpCredPwd = ConvertFrom-B64 $Config.RdpCredPwd
             cmdkey /generic:$($Config.RdpTarget) /user:$($Config.RdpCredUser) /pass:$rdpCredPwd | Out-Null
 
+            Write-Host "Desactivation ouverture auto Server Manager et verrouillage auto..." -ForegroundColor Yellow
+            reg add "HKLM\SOFTWARE\Microsoft\ServerManager" /v DoNotOpenServerManagerAtLogon /t REG_DWORD /d 1 /f > $null
+            reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v InactivityTimeoutSecs /t REG_DWORD /d 0 /f > $null
             Write-Host "Configuration du fond d'ecran..." -ForegroundColor Yellow
             Set-Wallpaper
 
