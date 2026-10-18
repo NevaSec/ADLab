@@ -132,6 +132,9 @@ function Invoke-LabSetup {
             Disable-NetAdapterPowerManagement -Name "$NetAdapter"
             netsh interface ipv6 set dnsservers "$NetAdapter" dhcp
 
+            Write-Host "Desactivation ouverture auto Server Manager et verrouillage auto..." -ForegroundColor Yellow
+            reg add "HKLM\SOFTWARE\Microsoft\ServerManager" /v DoNotOpenServerManagerAtLogon /t REG_DWORD /d 1 /f > $null
+            reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v InactivityTimeoutSecs /t REG_DWORD /d 0 /f > $null
             Write-Host "Configuration du fond d'ecran..." -ForegroundColor Yellow
             Set-Wallpaper
 
