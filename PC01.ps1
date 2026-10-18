@@ -71,15 +71,37 @@ function Nuke-Defender{
 
 function Set-Wallpaper {
     try {
-        $dir = "C:\Windows\Web\Wallpaper\NevaSec"
+        $dir = "C:\ProgramData\NevaSec"
         $img = "$dir\nevasec.png"
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
         Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/NevaSec/ADLab/raw/main/assets/nevasec.png" -OutFile $img
-        $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        New-Item -Path $key -Force | Out-Null
-        Set-ItemProperty -Path $key -Name Wallpaper      -Value $img
-        Set-ItemProperty -Path $key -Name WallpaperStyle -Value "6"
-        rundll32.exe user32.dll,UpdatePerUserSystemParameters
+
+        $set = {
+            param($base)
+            $k = "$base\Control Panel\Desktop"
+            if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+            Set-ItemProperty -Path $k -Name WallPaper      -Value $img
+            Set-ItemProperty -Path $k -Name WallpaperStyle -Value "6"
+            Set-ItemProperty -Path $k -Name TileWallpaper  -Value "0"
+        }
+
+        # Profils utilisateurs actuellement charges
+        Get-ChildItem Registry::HKEY_USERS | Where-Object { $_.Name -match 'S-1-5-21-.+\d$' -and $_.Name -notmatch '_Classes$' } | ForEach-Object { & $set "Registry::$($_.Name)" }
+
+        # Hive Default -> tout nouveau profil heritera du fond
+        reg load "HKU\NevaSecDef" "C:\Users\Default\NTUSER.DAT" > $null 2>&1
+        & $set "Registry::HKEY_USERS\NevaSecDef"
+        [gc]::Collect(); Start-Sleep -Milliseconds 500
+        reg unload "HKU\NevaSecDef" > $null 2>&1
+
+        # Application immediate pour la session courante
+        Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class Wp { [DllImport("user32.dll",CharSet=CharSet.Auto)] public static extern int SystemParametersInfo(int a,int u,string p,int f); }' -ErrorAction SilentlyContinue
+        [Wp]::SystemParametersInfo(20,0,$img,3) | Out-Null
+
+        # Lock / login screen (policy machine-wide, honoree sur les editions Server)
+        $lock = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Personalization"
+        if (-not (Test-Path $lock)) { New-Item -Path $lock -Force | Out-Null }
+        Set-ItemProperty -Path $lock -Name LockScreenImage -Value $img
     }
     catch {
         Write-Host "[AVERTISSEMENT] Configuration du fond d'ecran ignoree: $($_.Exception.Message)" -ForegroundColor Yellow
