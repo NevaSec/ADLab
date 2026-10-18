@@ -69,6 +69,23 @@ function Nuke-Defender{
     reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v "requiresecuritysignature" /t REG_DWORD /d "0" /f > $null
 }
 
+function Set-Wallpaper {
+    try {
+        $dir = "C:\Windows\Web\Wallpaper\NevaSec"
+        $img = "$dir\nevasec.png"
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/NevaSec/ADLab/raw/main/assets/nevasec.png" -OutFile $img
+        $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        New-Item -Path $key -Force | Out-Null
+        Set-ItemProperty -Path $key -Name Wallpaper      -Value $img
+        Set-ItemProperty -Path $key -Name WallpaperStyle -Value "6"
+        rundll32.exe user32.dll,UpdatePerUserSystemParameters
+    }
+    catch {
+        Write-Host "[AVERTISSEMENT] Configuration du fond d'ecran ignoree: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 function Invoke-LabSetup {
 
     $labNames = @('DC01','SRV01','PC01')
@@ -92,6 +109,9 @@ function Invoke-LabSetup {
             Set-DnsClientServerAddress -InterfaceAlias $NetAdapter -ServerAddresses ("$DNS","1.1.1.1")
             Disable-NetAdapterPowerManagement -Name "$NetAdapter"
             netsh interface ipv6 set dnsservers "$NetAdapter" dhcp
+
+            Write-Host "Configuration du fond d'ecran..." -ForegroundColor Yellow
+            Set-Wallpaper
 
             Write-Host "Renommage de la machine en $($Config.HostName)..." -ForegroundColor Green
             Rename-Computer -NewName $Config.HostName -Restart
