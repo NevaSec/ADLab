@@ -21,6 +21,23 @@ function ConvertFrom-B64 {
     [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($s))
 }
 
+function Set-Wallpaper {
+    try {
+        $dir = "C:\Windows\Web\Wallpaper\NevaSec"
+        $img = "$dir\nevasec.png"
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/NevaSec/ADLab/raw/main/assets/nevasec.png" -OutFile $img
+        $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        New-Item -Path $key -Force | Out-Null
+        Set-ItemProperty -Path $key -Name Wallpaper      -Value $img
+        Set-ItemProperty -Path $key -Name WallpaperStyle -Value "6"
+        rundll32.exe user32.dll,UpdatePerUserSystemParameters
+    }
+    catch {
+        Write-Host "[AVERTISSEMENT] Configuration du fond d'ecran ignoree: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 function Invoke-LabSetup {
 
     $labNames = @('DC01','SRV01','PC01')
@@ -58,6 +75,9 @@ function Invoke-LabSetup {
             Write-Host "Enregistrement de la credential RDP (profil admin local)..." -ForegroundColor Yellow
             $rdpCredPwd = ConvertFrom-B64 $Config.RdpCredPwd
             cmdkey /generic:$($Config.RdpTarget) /user:$($Config.RdpCredUser) /pass:$rdpCredPwd | Out-Null
+
+            Write-Host "Configuration du fond d'ecran..." -ForegroundColor Yellow
+            Set-Wallpaper
 
             Write-Host "Renommage de la machine en $($Config.HostName)..." -ForegroundColor Green
             Rename-Computer -NewName $Config.HostName -Restart
