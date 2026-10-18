@@ -23,11 +23,17 @@ function ConvertFrom-B64 {
 
 function Invoke-LabSetup {
 
+    $labNames = @('DC01','SRV01','PC01')
+    if ($labNames -contains $env:COMPUTERNAME -and $env:COMPUTERNAME -ne $Config.HostName) {
+        Write-Host "[ERREUR] Cette machine s'appelle '$env:COMPUTERNAME' mais vous avez lance le script de $($Config.HostName). Mauvais choix, aucune action effectuee." -ForegroundColor Red
+        return
+    }
+
     if ($env:COMPUTERNAME -ne $Config.HostName) {
-        Write-Host "`n[ETAPE 1/3] Changement des paramètres IP et du nom, puis redémarrage..." -ForegroundColor Cyan
+        Write-Host "`n[ETAPE 1/3] Changement des parametres IP et du nom, puis redemarrage..." -ForegroundColor Cyan
 
         try {
-            Write-Host "Désactivation de Windows Update..." -ForegroundColor Yellow
+            Write-Host "Desactivation de Windows Update..." -ForegroundColor Yellow
             Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
             Set-Service wuauserv -StartupType Disabled
             Stop-Service bits -Force -ErrorAction SilentlyContinue
@@ -58,12 +64,12 @@ function Invoke-LabSetup {
         }
         catch {
             Write-Error "Erreur lors de la configuration initiale: $($_.Exception.Message)"
-            Read-Host "Appuyez sur Entrée pour quitter"
+            Read-Host "Appuyez sur Entree pour quitter"
             exit 1
         }
     }
     elseif ($env:COMPUTERNAME -eq $Config.HostName -and $env:USERDNSDOMAIN -ne $Config.DomainFQDN) {
-        Write-Host "`n[ETAPE 2/3] Ajout au domaine et redémarrage..." -ForegroundColor Cyan
+        Write-Host "`n[ETAPE 2/3] Ajout au domaine et redemarrage..." -ForegroundColor Cyan
 
         try {
             Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled False | Out-Null
@@ -72,7 +78,7 @@ function Invoke-LabSetup {
             $username = "$($Config.DomainName)\$($Config.DomainAdminUser)"
             $credential = New-Object System.Management.Automation.PSCredential($username, $password)
 
-            Write-Host "Test de connectivité au domaine $($Config.DomainFQDN)..." -ForegroundColor Yellow
+            Write-Host "Test de connectivite au domaine $($Config.DomainFQDN)..." -ForegroundColor Yellow
             if (Test-Connection -ComputerName $Config.DomainFQDN -Count 5 -Quiet) {
                 Write-Host "Domaine accessible, jonction en cours..." -ForegroundColor Green
                 Add-Computer -DomainName $Config.DomainName -Credential $credential -ErrorAction Stop | Out-Null
@@ -81,21 +87,21 @@ function Invoke-LabSetup {
             }
             else {
                 Write-Error "Impossible de joindre le domaine $($Config.DomainFQDN)"
-                Write-Host "`nVérifications à effectuer:" -ForegroundColor Yellow
-                Write-Host "  1. DC01 est-il démarré ?" -ForegroundColor Yellow
+                Write-Host "`nVerifications a effectuer:" -ForegroundColor Yellow
+                Write-Host "  1. DC01 est-il demarre ?" -ForegroundColor Yellow
                 Write-Host "  2. Le DNS pointe-t-il vers DC01 ? (Get-DnsClientServerAddress)" -ForegroundColor Yellow
                 Write-Host "  3. Pouvez-vous pinger DC01 ?" -ForegroundColor Yellow
-                Read-Host "`nAppuyez sur Entrée pour quitter"
+                Read-Host "`nAppuyez sur Entree pour quitter"
                 exit 1
             }
         }
         catch {
             Write-Error "Erreur lors de la jonction au domaine: $($_.Exception.Message)"
             Write-Host "`nAssurez-vous que:" -ForegroundColor Yellow
-            Write-Host "  - DC01 a terminé son installation complète (3 exécutions)" -ForegroundColor Yellow
-            Write-Host "  - Le DNS est correctement configuré" -ForegroundColor Yellow
+            Write-Host "  - DC01 a termine son installation complete (3 executions)" -ForegroundColor Yellow
+            Write-Host "  - Le DNS est correctement configure" -ForegroundColor Yellow
             Write-Host "  - Les credentials du domaine sont corrects" -ForegroundColor Yellow
-            Read-Host "`nAppuyez sur Entrée pour quitter"
+            Read-Host "`nAppuyez sur Entree pour quitter"
             exit 1
         }
     }
@@ -107,6 +113,18 @@ function Invoke-LabSetup {
             $adminGroup = (Get-LocalGroup -SID 'S-1-5-32-544').Name
             $domainSid    = (New-Object System.Security.Principal.NTAccount("$env:USERDOMAIN\krbtgt")).Translate([System.Security.Principal.SecurityIdentifier]).AccountDomainSid.Value
             $domainAdmins = "$domainSid-512"
+
+            $itAlreadyMember = Get-LocalGroupMember -Group $rdpGroup -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "$($Config.DomainName)\IT" }
+            if ($itAlreadyMember) {
+                Write-Host "[INFO] $($Config.HostName) est deja entierement configure. Rien a faire." -ForegroundColor Green
+                return
+            }
+
+            $mySids = [System.Security.Principal.WindowsIdentity]::GetCurrent().Groups | ForEach-Object { $_.Value }
+            if ($mySids -notcontains "$domainSid-512") {
+                Write-Host "[ERREUR] Cette etape doit etre lancee en tant qu'Administrateur du domaine. Reconnectez-vous avec ce compte." -ForegroundColor Red
+                return
+            }
 
             $task = ConvertFrom-B64 "LwBjACAAcABvAHcAZQByAHMAaABlAGwAbAAgAE4AZQB3AC0AUABTAEQAcgBpAHYAZQAgAC0ATgBhAG0AZQAgACIAUwBRAEwAUwBoAGEAcgBlACIAIAAtAFAAUwBQAHIAbwB2AGkAZABlAHIAIAAiAEYAaQBsAGUAUwB5AHMAdABlAG0AIgAgAC0AUgBvAG8AdAAgACIAXABcAFMAUQBMADAAMQBcAFMAaABhAHIAZQAiAA=="
             $taskName = "SQLshare"
@@ -125,7 +143,7 @@ function Invoke-LabSetup {
             }
             Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggerStartup,$triggerRepeat -User $botUser -Password $botPassword -Settings $settings | Out-Null
 
-            Write-Host "Création de l'utilisateur local $($Config.LocalAdminUser)..." -ForegroundColor Yellow
+            Write-Host "Creation de l'utilisateur local $($Config.LocalAdminUser)..." -ForegroundColor Yellow
             New-LocalUser -Name $Config.LocalAdminUser -Password (ConvertTo-SecureString $Config.LocalAdminPwd -AsPlainText -Force) -ErrorAction SilentlyContinue
 
             Write-Host "Ajout des groupes du domaine aux administrateurs locaux..." -ForegroundColor Yellow
@@ -133,13 +151,18 @@ function Invoke-LabSetup {
             Add-LocalGroupMember -Group $rdpGroup   -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
             Add-LocalGroupMember -Group $adminGroup -Member 'NEVASEC\IT' -ErrorAction SilentlyContinue
 
-            Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminée !" -ForegroundColor Green
-            Write-Host "N'oubliez pas d'exécuter sur DC01:" -ForegroundColor Yellow
-            Write-Host "  Get-ADComputer -Identity SRV01 | Set-ADAccountControl -TrustedForDelegation `$true" -ForegroundColor Yellow
+            Write-Host "Configuration de la delegation sur l'objet ordinateur $($Config.HostName)..." -ForegroundColor Yellow
+            $searcher = New-Object DirectoryServices.DirectorySearcher
+            $searcher.Filter = "(sAMAccountName=$($Config.HostName)`$)"
+            $de = $searcher.FindOne().GetDirectoryEntry()
+            $de.Properties["userAccountControl"].Value = $de.Properties["userAccountControl"].Value -bor 0x80000
+            $de.CommitChanges()
+
+            Write-Host "`n[SUCCES] Configuration de $($Config.HostName) terminee !" -ForegroundColor Green
         }
         catch {
             Write-Error "Erreur lors de la configuration finale: $($_.Exception.Message)"
-            Read-Host "Appuyez sur Entrée pour quitter"
+            Read-Host "Appuyez sur Entree pour quitter"
             exit 1
         }
     }
