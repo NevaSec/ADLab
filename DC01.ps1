@@ -112,6 +112,23 @@ function Get-QoL{
     Get-ScheduledTask -TaskName ServerManager | Disable-ScheduledTask | Out-Null
 }
 
+function Set-Wallpaper{
+    try {
+        $dir = "C:\Windows\Web\Wallpaper\NevaSec"
+        $img = "$dir\nevasec.png"
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/NevaSec/ADLab/raw/main/assets/nevasec.png" -OutFile $img
+        $key = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        New-Item -Path $key -Force | Out-Null
+        Set-ItemProperty -Path $key -Name Wallpaper      -Value $img
+        Set-ItemProperty -Path $key -Name WallpaperStyle -Value "6"
+        rundll32.exe user32.dll,UpdatePerUserSystemParameters
+    }
+    catch {
+        Write-Host "[AVERTISSEMENT] Configuration du fond d'ecran ignoree: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 function Add-User{
     param(
         [Parameter()][string]$prenom,
@@ -286,8 +303,8 @@ function Add-ServerContent{
     $usersName    = (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-545")).Translate([System.Security.Principal.NTAccount]).Value
     New-SmbShare -Name "Share" -Path "C:\Share" -ChangeAccess $usersName -FullAccess $everyoneName -WarningAction SilentlyContinue | Out-Null
 
-    Invoke-WebRequest -Uri "https://github.com/NevaSec/ADLab/raw/main/LdapAdminPortable.zip" -OutFile "C:\Share\LdapAdminPortable.zip"
-    Invoke-WebRequest -Uri "https://github.com/NevaSec/ADLab/raw/main/share.zip" -OutFile "C:\Share\share.zip"
+    Invoke-WebRequest -Uri "https://github.com/NevaSec/ADLab/raw/main/assets/LdapAdminPortable.zip" -OutFile "C:\Share\LdapAdminPortable.zip"
+    Invoke-WebRequest -Uri "https://github.com/NevaSec/ADLab/raw/main/assets/share.zip" -OutFile "C:\Share\share.zip"
     Expand-Archive -Path "C:\Share\share.zip" -DestinationPath "C:\Share" -Force
     Remove-Item "C:\Share\share.zip" -Force
 
@@ -518,6 +535,8 @@ function Invoke-LabSetup{
         Nuke-Defender
         Write-Host "Configuration systeme..." -ForegroundColor Yellow
         Get-QoL
+        Write-Host "Configuration du fond d'ecran..." -ForegroundColor Yellow
+        Set-Wallpaper
         Write-Host "`nRedemarrage en cours..." -ForegroundColor Green
         Start-Sleep -Seconds 5
         Rename-Computer -NewName $Config.HostName -Restart
