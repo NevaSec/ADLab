@@ -504,6 +504,12 @@ function Set-Delegations {
 }
 
 function Invoke-LabSetup{
+    $labNames = @('DC01','SRV01','PC01')
+    if ($labNames -contains $env:COMPUTERNAME -and $env:COMPUTERNAME -ne $Config.HostName) {
+        Write-Host "[ERREUR] Cette machine s'appelle '$env:COMPUTERNAME' mais vous avez lance le script de $($Config.HostName). Mauvais choix, aucune action effectuee." -ForegroundColor Red
+        return
+    }
+
     if ($env:COMPUTERNAME -ne $Config.HostName) {
         Write-Host "`n[ETAPE 1/3] Premiere execution detectee" -ForegroundColor Cyan
         Write-Host "Configuration reseau..." -ForegroundColor Yellow
