@@ -399,9 +399,9 @@ function New-CertTemplate {
         'msPKI-Cert-Template-OID' = $NewOID
     }
 
-    $pKIExpirationPeriod = [byte[]](0x00, 0x80, 0x1A, 0x06, 0x00, 0x00, 0x00, 0x00)
-    $pKIOverlapPeriod = [byte[]](0x00, 0x80, 0xA6, 0x0A, 0x02, 0x00, 0x00, 0x00)
-    $pKIKeyUsage = [byte[]](0xA0, 0x00)
+    $pKIExpirationPeriod = [byte[]]$Source.pKIExpirationPeriod
+    $pKIOverlapPeriod = [byte[]]$Source.pKIOverlapPeriod
+    $pKIKeyUsage = [byte[]]$Source.pKIKeyUsage
 
     $TemplateAttrs = @{
         'displayName' = $DisplayName
